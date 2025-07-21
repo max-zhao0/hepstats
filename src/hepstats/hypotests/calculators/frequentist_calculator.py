@@ -6,7 +6,7 @@ import numpy as np
 from scipy.stats import norm
 
 from ...utils import base_sample, base_sampler
-from ..parameters import POI, POIarray
+# from ..parameters import POI, POIarray
 from .basecalculator import ToysCalculator
 
 

@@ -4,7 +4,7 @@ Module providing basic sampling methods.
 
 from __future__ import annotations
 
-from .api_check import is_valid_pdf
+# from .api_check import is_valid_pdf
 from .diverse import get_value, set_values
 
 

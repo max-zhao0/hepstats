@@ -6,4 +6,4 @@ Module for hypothesis tests, upper limits and confidence intervals calculations.
 # -----------------------------------------------------------------------------
 # Import statements
 # -----------------------------------------------------------------------------
-from .core import Discovery, UpperLimit, ConfidenceInterval
+from .core import discovery

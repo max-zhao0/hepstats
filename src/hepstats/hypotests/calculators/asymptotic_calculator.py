@@ -9,9 +9,9 @@ import numpy as np
 from scipy.stats import norm
 
 from ...utils import array2dataset, eval_pdf, get_value, pll, set_values
-from ...utils.fit.api_check import is_valid_fitresult, is_valid_loss
+# from ...utils.fit.api_check import LossLike, MinimumLike, MinimizerLike # is_valid_fitresult, is_valid_loss
 from ...utils.fit.diverse import get_ndims
-from ..parameters import POI, POIarray
+# from ..parameters import POI, POIarray
 from .basecalculator import BaseCalculator
 
 
@@ -107,11 +107,17 @@ class AsymptoticCalculator(BaseCalculator):
         UNBINNED_TO_BINNED_LOSS[UnbinnedNLL] = BinnedNLL
         UNBINNED_TO_BINNED_LOSS[ExtendedUnbinnedNLL] = ExtendedBinnedNLL
 
-    def __init__(
-        self,
-        input,
-        minimizer,
-        asimov_bins: int | list[int] | None = None,
+    def __init__(self,
+        loss : api.LossLike, 
+        params : pt.PyTree[api.ParameterLike], 
+        *loss_args,
+        data : api.Data = None,
+        spaces : pt.PyTree[api.SpaceLike] = None,
+        models : pt.PyTree[api.BinnedModelLike | api.UnbinnedModelLike] = None,
+        is_binned : pt.PyTree[bool] = None,
+        asimov_bins: pt.PyTree[int] = None,
+        minimizer : api.MinimizerLike = None, 
+        **kwargs
     ):
         """Asymptotic calculator class using Wilk's and Wald's asymptotic formulae.
 
@@ -138,17 +144,17 @@ class AsymptoticCalculator(BaseCalculator):
             >>>
             >>> calc = AsymptoticCalculator(input=loss, minimizer=Minuit(), asimov_bins=100)
         """
-        if is_valid_fitresult(input):
-            loss = input.loss
-        elif is_valid_loss(input):
-            loss = input
-        else:
-            msg = "input must be a fitresult or a loss"
-            raise ValueError(msg)
+        # if is_valid_fitresult(input):
+        #     loss = input.loss
+        # elif is_valid_loss(input):
+        #     loss = input
+        # else:
+        #     msg = "input must be a fitresult or a loss"
+        #     raise ValueError(msg)
 
-        asimov_bins_converted = self._check_convert_asimov_bins(asimov_bins, loss.data)
-
-        super().__init__(input, minimizer)
+        super().__init__(loss, params, *loss_args, data=data, minimizer=minimizer, **kwargs)
+        asimov_bins_converted = [] # self._check_convert_asimov_bins(asimov_bins, loss.data)
+        
         self._asimov_bins = asimov_bins_converted
         self._asimov_dataset: dict = {}
         self._asimov_loss: dict = {}
@@ -235,24 +241,24 @@ class AsymptoticCalculator(BaseCalculator):
         ), "INTERNAL ERROR: Could not correctly convert asimov_bins, dimensions wrong"
         return asimov_bins
 
-    @staticmethod
-    def check_pois(pois: POI | POIarray):
-        """
-        Checks if the parameter of interest is a :class:`hepstats.parameters.POIarray` instance.
+    # @staticmethod
+    # def check_pois(pois: POI | POIarray):
+    #     """
+    #     Checks if the parameter of interest is a :class:`hepstats.parameters.POIarray` instance.
 
-        Args:
-            pois: the parameter of interest to check.
+    #     Args:
+    #         pois: the parameter of interest to check.
 
-        Raises:
-            TypeError: if pois is not an instance of :class:`hepstats.parameters.POIarray`.
-        """
+    #     Raises:
+    #         TypeError: if pois is not an instance of :class:`hepstats.parameters.POIarray`.
+    #     """
 
-        msg = "POI/POIarray is required."
-        if not isinstance(pois, POIarray):
-            raise TypeError(msg)
-        if pois.ndim > 1:
-            msg = "Tests using the asymptotic calculator can only be used with one parameter of interest."
-            raise NotImplementedError(msg)
+    #     msg = "POI/POIarray is required."
+    #     if not isinstance(pois, POIarray):
+    #         raise TypeError(msg)
+    #     if pois.ndim > 1:
+    #         msg = "Tests using the asymptotic calculator can only be used with one parameter of interest."
+    #         raise NotImplementedError(msg)
 
     def asimov_dataset(self, poi: POI, ntrials_fit: int | None = None):
         """Gets the Asimov dataset for a given alternative hypothesis.
@@ -427,6 +433,8 @@ class AsymptoticCalculator(BaseCalculator):
                 pnull_2 += 1.0 - norm.cdf(sqrtqobs - nsigma)
 
             pnull = np.where(cond, pnull_2, pnull)
+
+        print("pnull = {}, qobs = {}".format(pnull, qobs))
 
         return pnull
 
