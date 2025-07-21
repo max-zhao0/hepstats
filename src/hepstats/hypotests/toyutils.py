@@ -18,7 +18,7 @@ from tqdm.auto import tqdm
 from ..utils import base_sample, base_sampler, pll, set_values
 from .exceptions import FormatError, ParameterNotFound
 from .hypotests_object import ToysObject
-from .parameters import POI, POIarray
+# from .parameters import POI, POIarray
 
 
 class ToyResult:

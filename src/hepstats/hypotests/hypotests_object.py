@@ -4,10 +4,14 @@ import warnings
 
 import numpy as np
 
-from ..utils.fit import get_nevents, set_values_once
-from ..utils.fit.api_check import is_valid_data, is_valid_fitresult, is_valid_loss, is_valid_minimizer, is_valid_pdf
-from .parameters import POI
-
+# from ..utils.pytree import pt
+# from ..utils.fit import get_nevents, set_values_once
+# # from ..utils.fit.api import ModelLike, LossLike, MinimizerLike, MinimumLike, ParameterLike, convert_params
+# from ..utils.fit
+# # from .parameters import POI
+# from ..utils.fit import minimizers
+from ..utils import pt, api, minimizers
+from ..utils import get_nevents, set_values_once
 
 class HypotestsObject:
     """Base object in `hepstats.hypotests` to manipulate a loss function and a minimizer.
@@ -17,29 +21,36 @@ class HypotestsObject:
         minimizer: minimizer to use to find the minimum of the loss function
     """
 
-    def __init__(self, input, minimizer, **kwargs):
+    def __init__(self, 
+        loss : api.LossLike, 
+        params : pt.PyTree[api.ParameterLike], 
+        *loss_args,
+        data : api.Data = None,
+        minimizer : api.MinimizerLike = None, 
+        **kwargs
+    ):
+        
         super().__init__(**kwargs)
-        if is_valid_fitresult(input):
-            self._loss = input.loss
-            self._bestfit = input
-        elif is_valid_loss(input):
-            self._loss = input
-            self._bestfit = None
-        else:
-            msg = f"{input} is not a valid loss function or fit result!"
-            raise ValueError(msg)
+        if not isinstance(loss, api.LossLike):
+            raise ValueError("loss is not LossLike")
 
-        if not is_valid_minimizer(minimizer):
+        self._loss = loss
+        self._bestfit = None 
+        self._parameters = api.convert_params(params)
+        self._user_params = params
+        self._data = data
+        self._loss_args = loss_args
+
+        if minimizer is None:
+            self._minimizer = minimizers.IMinuit()
+        elif not isinstance(minimizer, api.MinimizerLike):
             msg = f"{minimizer} is not a valid minimizer !"
             raise ValueError(msg)
-
-        self._minimizer = minimizer
-        self.minimizer.verbosity = 0
-
-        self._parameters = {param.name: param for param in self.loss.get_params()}
+        else:
+            self._minimizer = minimizer
 
     @property
-    def loss(self):
+    def loss(self) -> LossLike:
         """
         Returns the loss / likelihood function.
         """
@@ -53,127 +64,126 @@ class HypotestsObject:
         return self._minimizer
 
     @property
-    def bestfit(self):
+    def data(self):
+        return self._data
+
+    @property
+    def loss_args(self):
+        return self._loss_args
+
+    @property
+    def bestfit(self) -> MinimumLike:
         """
         Returns the best fit values of the model parameters.
         """
-        if getattr(self, "_bestfit", None):
-            return self._bestfit
-        else:
-            old_verbosity = self.minimizer.verbosity
-            self.minimizer.verbosity = 5
-            minimum = self.minimizer.minimize(loss=self.loss)
-            self.minimizer.verbosity = old_verbosity
+        # if getattr(self, "_bestfit", None):
+        #     return self._bestfit
+        if self._bestfit is None:
+            minimum = self.minimizer.minimize(loss=self.loss, params=self.parameters, data=self.data, *self._loss_args)
             self._bestfit = minimum
-            return self._bestfit
+        return self._bestfit
 
     @bestfit.setter
-    def bestfit(self, value):
+    def bestfit(self, value : MinimumLike):
         """
         Set the best fit values  of the model parameters.
 
         Args:
             value: fit result
         """
-        if not is_valid_fitresult(value):
-            msg = f"{input} is not a valid fit result!"
+        # CHECK PARAM TREEDEF
+        if not isinstance(value, MinimumLike):
+            msg = f"{value} is not a valid fit result!"
             raise ValueError(msg)
         self._bestfit = value
 
-    @property
-    def model(self):
-        """
-        Returns the model.
-        """
-        return self.loss.model
+    # @property
+    # def model(self):
+    #     """
+    #     Returns the model.
+    #     """
+    #     return self.loss.model
 
-    @property
-    def data(self):
-        """
-        Returns the data.
-        """
-        return self.loss.data
+    # @property
+    # def constraints(self):
+    #     """
+    #     Returns the constraints on the loss / likehood function.
+    #     """
+    #     return self.loss.constraints
 
-    @property
-    def constraints(self):
-        """
-        Returns the constraints on the loss / likehood function.
-        """
-        return self.loss.constraints
+    # def get_parameter(self, name: str):
+    #     """
+    #     Returns the parameter in loss function with given input name.
 
-    def get_parameter(self, name: str):
-        """
-        Returns the parameter in loss function with given input name.
-
-        Args:
-            name: name of the parameter to return
-        """
-        return self._parameters[name]
+    #     Args:
+    #         name: name of the parameter to return
+    #     """
+    #     return self._parameters[name]
 
     @property
     def parameters(self):
         """
-        Returns the list of free parameters in loss / likelihood function.
+        Returns the list of free parameters in loss / likelihood function in the form of InternalParameter.
         """
-        return list(self._parameters.values())
+        return self._parameters
 
-    def set_params_to_bestfit(self):
-        """
-        Set the values of the parameters in the models to the best fit values
-        """
-        set_values_once(self.parameters, self.bestfit)
+    # def set_params_to_bestfit(self):
+    #     """
+    #     Set the values of the parameters in the models to the best fit values
+    #     """
+    #     set_values_once(self.parameters, self.bestfit)
 
-    def lossbuilder(self, model, data, weights=None, oldloss=None):
-        """Method to build a new loss function.
+    # def lossbuilder(self, model, data, weights=None, oldloss=None):
+    #     """Method to build a new loss function.
 
-        Args:
-            * **model** (List): The model or models to evaluate the data on
-            * **data** (List): Data to use
-            * **weights** (optional, List): the data weights
-            * **oldloss**: Previous loss that has data, models, type
+    #     Args:
+    #         * **model** (List): The model or models to evaluate the data on
+    #         * **data** (List): Data to use
+    #         * **weights** (optional, List): the data weights
+    #         * **oldloss**: Previous loss that has data, models, type
 
-        Example with `zfit`:
-            >>> data = zfit.data.Data.from_numpy(obs=obs, array=np.random.normal(1.2, 0.1, 10000))
-            >>> mean = zfit.Parameter("mu", 1.2)
-            >>> sigma = zfit.Parameter("sigma", 0.1)
-            >>> model = zfit.pdf.Gauss(obs=obs, mu=mean, sigma=sigma)
-            >>> loss = calc.lossbuilder(model, data)
+    #     Example with `zfit`:
+    #         >>> data = zfit.data.Data.from_numpy(obs=obs, array=np.random.normal(1.2, 0.1, 10000))
+    #         >>> mean = zfit.Parameter("mu", 1.2)
+    #         >>> sigma = zfit.Parameter("sigma", 0.1)
+    #         >>> model = zfit.pdf.Gauss(obs=obs, mu=mean, sigma=sigma)
+    #         >>> loss = calc.lossbuilder(model, data)
 
-        Returns:
-            Loss function
+    #     Returns:
+    #         Loss function
 
-        """
+    #     """
 
-        if oldloss is None:
-            oldloss = self.loss
-        assert all(is_valid_pdf(m) for m in model)
-        assert all(is_valid_data(d) for d in data)
+    #     if oldloss is None:
+    #         oldloss = self.loss
+    #     assert all(is_valid_pdf(m) for m in model)
+    #     assert all(is_valid_data(d) for d in data)
 
-        msg = "{0} must have the same number of components as {1}"
-        if len(data) != len(self.data):
-            raise ValueError(msg.format("data", "`self.data"))
-        if len(model) != len(self.model):
-            raise ValueError(msg.format("model", "`self.model"))
-        if weights is not None and len(weights) != len(self.data):
-            raise ValueError(msg.format("weights", "`self.data`"))
+    #     msg = "{0} must have the same number of components as {1}"
+    #     if len(data) != len(self.data):
+    #         raise ValueError(msg.format("data", "`self.data"))
+    #     if len(model) != len(self.model):
+    #         raise ValueError(msg.format("model", "`self.model"))
+    #     if weights is not None and len(weights) != len(self.data):
+    #         raise ValueError(msg.format("weights", "`self.data`"))
 
-        if weights is not None:
-            for d, w in zip(data, weights):
-                d = d.with_weights(w)
+    #     if weights is not None:
+    #         for d, w in zip(data, weights):
+    #             d = d.with_weights(w)
 
-        if hasattr(oldloss, "create_new"):
-            loss = oldloss.create_new(model=model, data=data, constraints=self.constraints)
-        else:
-            warnings.warn(
-                "A loss should have a `create_new` method. If you are using zfit, please make sure to"
-                "upgrade to >= 0.6.4",
-                FutureWarning,
-                stacklevel=2,
-            )
-            loss = type(oldloss)(model=model, data=data)
-            loss.add_constraints(self.constraints)
+    #     if hasattr(oldloss, "create_new"):
+    #         loss = oldloss.create_new(model=model, data=data, constraints=self.constraints)
+    #     else:
+    #         warnings.warn(
+    #             "A loss should have a `create_new` method. If you are using zfit, please make sure to"
+    #             "upgrade to >= 0.6.4",
+    #             FutureWarning,
+    #             stacklevel=2,
+    #         )
+    #         loss = type(oldloss)(model=model, data=data)
+    #         loss.add_constraints(self.constraints)
 
-        return loss
+    #     return loss
 
 
 class ToysObject(HypotestsObject):

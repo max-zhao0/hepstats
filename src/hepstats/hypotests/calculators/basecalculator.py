@@ -1,20 +1,26 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
-
+# from collections.abc import Callable
+from typing import Any, Callable, Iterable
 import numpy as np
 
-from ...utils import base_sample, base_sampler, pll
+from ...utils import base_sample, base_sampler, pll, api, pt, POIarray, POI
 from ..hypotests_object import HypotestsObject
-from ..parameters import POI, POIarray, asarray
+# from ..parameters import POI, POIarray, asarray
 from ..toyutils import ToyResult, ToysManager
 
 
 class BaseCalculator(HypotestsObject):
     """Base class for calculator."""
 
-    def __init__(self, input, minimizer, **kwargs):
+    def __init__(self, 
+        loss : api.LossLike, 
+        params : pt.PyTree[api.ParameterLike], 
+        *loss_args,
+        data : api.Data = None,
+        minimizer : api.MinimizerLike = None, 
+        **kwargs
+    ):
         """
         Args:
             input: loss or fit result
@@ -34,14 +40,14 @@ class BaseCalculator(HypotestsObject):
             >>>
             >>> calc = BaseCalculator(input=loss, minimizer=Minuit())
         """
-        super().__init__(input, minimizer, **kwargs)
+        super().__init__(loss, params, *loss_args, data=None, minimizer=minimizer, **kwargs)
 
         self._obs_nll = {}
 
-        self._parameters = {}
-        for m in self.model:
-            for d in m.get_params():
-                self._parameters[d.name] = d
+        # self._parameters = {}
+        # for m in self.model:
+        #     for d in m.get_params():
+        #         self._parameters[d.name] = d
 
     def obs_nll(self, pois: POIarray) -> np.ndarray:
         """Compute observed negative log-likelihood values for given parameters of interest.
@@ -57,13 +63,18 @@ class BaseCalculator(HypotestsObject):
             >>> poi = POI(mean, [1.1, 1.2, 1.0])
             >>> nll = calc.obs_nll(poi)
         """
+    
+        # ret = np.empty(pois.shape)
+        # for i, p in enumerate(pois):
+        #     if p not in self._obs_nll:
+        #         nll = pll(minimizer=self.minimizer, loss=self.loss, pois=p)
+        #         self._obs_nll[p] = nll
+        #     ret[i] = self._obs_nll[p]
+        # return ret
 
         ret = np.empty(pois.shape)
         for i, p in enumerate(pois):
-            if p not in self._obs_nll:
-                nll = pll(minimizer=self.minimizer, loss=self.loss, pois=p)
-                self._obs_nll[p] = nll
-            ret[i] = self._obs_nll[p]
+            ret[i] = pll(p, self.minimizer, self.loss, self.parameters, *self.loss_args, data=self.data)
         return ret
 
     def qobs(
@@ -93,19 +104,31 @@ class BaseCalculator(HypotestsObject):
         """
 
         self.check_pois(poinull)
+        assert isinstance(poinull, POI)
 
-        if poinull.ndim == 1:
-            param = poinull.parameter
-            bestfit = self.bestfit.params[param]["value"]
+        # if poinull.ndim == 1:
+        #     poi_spec = poinull.param_spec
+        #     bestfitpoi_val = self.bestfit.spec_value_map[poi_spec]
 
-            if qtilde and bestfit < 0:
-                bestfitpoi = POI(param, 0)
-            else:
-                bestfitpoi = POI(param, bestfit)
-                self._obs_nll[bestfitpoi] = self.bestfit.fmin
+        #     if qtilde and bestfit < 0:
+        #         bestfitpoi = POI(poi_spec, 0)
+        #     else:
+        #         bestfitpoi = POI(poi_spec, bestfitpoi_val)
+        #         self._obs_nll[bestfitpoi] = self.bestfit.fmin
 
+        bestfitpoi_val = poinull.param_path(self.bestfit.params)
+        assert bestfitpoi_val.ndim == 0, "qobs cannot be calculated with array valued POI"
+        
+        if qtilde:
+            bestfitpoi_val = max(bestfitpoi_val, 0)
+        bestfitpoi = POI(poinull.param_path, bestfitpoi_val)
+        
         nll_bestfitpoi_obs = self.obs_nll(bestfitpoi)
         nll_poinull_obs = self.obs_nll(poinull)
+
+        print("nll_poinull_obs={}, nll_bestfitpoi_obs={}".format(nll_poinull_obs, nll_bestfitpoi_obs))
+        print("poinull={}, bestfitpoi={}".format(poinull, bestfitpoi))
+        
         return self.q(
             nll1=nll_poinull_obs,
             nll2=nll_bestfitpoi_obs,
@@ -219,9 +242,8 @@ class BaseCalculator(HypotestsObject):
         To be overwritten in `BaseCalculator` subclasses.
         """
         raise NotImplementedError
-
-    @staticmethod
-    def check_pois(pois: POI | POIarray):
+    
+    def check_pois(self, pois: POI):
         """
         Checks if the parameter of interest is a :class:`hepstats.parameters.POIarray` instance.
 
@@ -232,12 +254,23 @@ class BaseCalculator(HypotestsObject):
             TypeError: if pois is not an instance of :class:`hepstats.parameters.POIarray`.
         """
 
-        msg = "POI/POIarray is required."
+        # msg = "POI/POIarray is required."
+        # if not isinstance(pois, POIarray):
+        #     raise TypeError(msg)
+        # if pois.ndim > 1:
+        #     msg = "Tests with more that one parameter of interest are not yet implemented."
+        #     raise NotImplementedError(msg)
+
         if not isinstance(pois, POIarray):
-            raise TypeError(msg)
-        if pois.ndim > 1:
-            msg = "Tests with more that one parameter of interest are not yet implemented."
-            raise NotImplementedError(msg)
+            raise ValueError("Not POI or POIarray")
+
+        reference_param = pois.param_path(self._user_params)
+        if not isinstance(reference_param, api.ParameterLike):
+            raise ValueError("POIarray.param_path needs to be point to a Parameter")
+        if not reference_param.floating:
+            raise ValueError("POI must point to a floating parameter")
+        if np.shape(reference_param.value) != np.shape(pois.values)[1:]:
+            raise ValueError("POI values provided do not match the shape of the parameter values it points to")
 
     @staticmethod
     def check_pois_compatibility(poi1: POI | POIarray, poi2: POI | POIarray):
@@ -253,14 +286,14 @@ class BaseCalculator(HypotestsObject):
                names.
         """
 
-        if poi1.ndim != poi2.ndim:
-            msg = f"POIs should have the same dimensions, poi1={poi1.ndim}, poi2={poi2.ndim}"
-            raise ValueError(msg)
+        # if poi1.ndim != poi2.ndim:
+        #     msg = f"POIs should have the same dimensions, poi1={poi1.ndim}, poi2={poi2.ndim}"
+        #     raise ValueError(msg)
 
-        if poi1.ndim == 1 and poi1.name != poi2.name:
-            msg = "The variables used in the parameters of interest should have the same names,"
-            msg += f" poi1={poi1.name}, poi2={poi2.name}"
-            raise ValueError(msg)
+        # if poi1.ndim == 1 and poi1.name != poi2.name:
+        #     msg = "The variables used in the parameters of interest should have the same names,"
+        #     msg += f" poi1={poi1.name}, poi2={poi2.name}"
+        #     raise ValueError(msg)
 
     def q(
         self,

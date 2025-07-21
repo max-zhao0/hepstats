@@ -12,3 +12,4 @@ This module contains in particular:
 # -----------------------------------------------------------------------------
 
 from .bayesian_blocks import bayesian_blocks
+from .testbed import *

@@ -8,3 +8,4 @@ from .diverse import (
     set_values_once,
 )
 from .sampling import base_sampler, base_sample
+from .poi import POIarray, POI, asarray
