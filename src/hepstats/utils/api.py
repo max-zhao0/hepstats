@@ -244,7 +244,7 @@ def convert_params(params : pt.PyTree[ParameterLike]) -> InternalParameterCollec
     def format_floatings(p):
         if not isinstance(p.floating, bool):
             raise ValueError("floating must be bool")
-        return np.broadcast_to(p.floating, np.shaped(p.value))
+        return np.broadcast_to(p.floating, np.shape(p.value))
     
     values = pt.map(format_values, params, is_leaf=lambda x: isinstance(x, ParameterLike))
     lowers = pt.map(format_lowers, params, is_leaf=lambda x: isinstance(x, ParameterLike))
