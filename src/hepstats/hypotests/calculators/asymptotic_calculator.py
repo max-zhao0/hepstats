@@ -268,7 +268,7 @@ class AsymptoticCalculator(BaseCalculator):
             ntrials_fit: (default: 5) maximum number of fits to perform
 
         Returns:
-             The asymov dataset.
+             The asimov dataset.
 
         Example with **zfit**:
             >>> poialt = POI(mean, 1.2)
@@ -335,6 +335,45 @@ class AsymptoticCalculator(BaseCalculator):
 
             self._asimov_dataset[poi] = asimov_data
 
+        return self._asimov_dataset[poi]
+
+    def _asimov_dataset(self, poi: POI, ntrials_fit: int | None = None):
+        if poi not in self._asimov_dataset:
+            model = binned_loss.model
+            data = binned_loss.data
+            loss = binned_loss
+            binned_loss = self._get_binned_loss()
+            minimizer = self.minimizer
+
+            poiparam = poi.parameter
+            poivalue = poi.value
+            self.set_params_to_bestfit()
+            poiparam.floating = False
+
+            if not self.loss.get_params():
+                values = {poiparam: {"value": poivalue}}
+            else:
+                with poiparam.set_value(poivalue):
+                    for _trial in range(ntrials_fit):
+                        minimum = minimizer.minimize(loss=loss)
+                        if minimum.valid:
+                            break
+                        for p in self.parameters:
+                            if p != poiparam:
+                                p.set_value(get_value(p) * np.random.normal(1, 0.02, 1)[0])
+
+                values = dict(minimum.params)
+                values[poiparam] = {"value": poivalue}
+            poiparam.floating = True
+
+            asimov_data = []
+            asimov_bins = self._asimov_bins
+            is_binned_loss = isinstance(loss, tuple(self.UNBINNED_TO_BINNED_LOSS.values()))
+            for _i, (m, d, nbins) in enumerate(zip(model, data, asimov_bins)):
+                dataset = generate_asimov_dataset(d, m, is_binned_loss, nbins, values)
+                asimov_data.append(dataset)
+
+            self._asimov_dataset[poi] = asimov_data
         return self._asimov_dataset[poi]
 
     def asimov_loss(self, poi: POI):

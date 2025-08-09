@@ -22,8 +22,6 @@ class IMinuit:
         data : api.Data = None
         ) -> Minimum:
 
-        assert len(values_flat) == len(lowers_flat) == len(uppers_flat) == len(floatings_flat)
-        call_loss = (lambda x: loss(unravel_func(x), data, *loss_args)) if data is not None else (lambda x: loss(unravel_func(x), *loss_args))
 
         if not isinstance(params, api.InternalParameterCollection):
             params = api.convert_params(params)
@@ -33,7 +31,9 @@ class IMinuit:
         uppers_flat, _ = pt.ravel(params.uppers)
         floatings_flat, _ = pt.ravel(params.floatings)
 
-        call_loss = lambda x: loss(unravel_func(x), *loss_args)
+        # call_loss = lambda x: loss(unravel_func(x), *loss_args)
+        assert len(values_flat) == len(lowers_flat) == len(uppers_flat) == len(floatings_flat)
+        call_loss = (lambda x: loss(unravel_func(x), data, *loss_args)) if data is not None else (lambda x: loss(unravel_func(x), *loss_args))
         
         minuit = self.Minuit(call_loss, values_flat)
         minuit.fixed[:] = np.invert(floatings_flat)
@@ -76,7 +76,11 @@ class IMinuit:
         
     #     return Minimum(fmin=minuit.fval, params=restore(minuit.values), loss=loss)
 
-    # def minimize(self, loss : LossLike, params : pt.PyTree[Union[InternalParameter, ParameterLike]], data : Data = None, *loss_args) -> Minimum:
+    # def minimize(self, 
+    #     loss : LossLike, 
+    #     params : pt.PyTree[Union[InternalParameter, ParameterLike]], 
+    #     data : Data = None, *loss_args
+    # ) -> Minimum:
     #     param_lst, treedef = pt.flatten(params, is_leaf=lambda x: isinstance(x, ParameterLike) or isinstance(x, InternalParameter))
     #     if isinstance(param_lst[0], ParameterLike):
     #         param_lst = convert_params(param_lst)
