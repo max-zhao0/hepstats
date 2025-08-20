@@ -5,10 +5,11 @@ import typing
 import warnings
 from typing import Any
 
+from numpy.typing import ArrayLike
 import numpy as np
 from scipy.stats import norm
 
-from ...utils import array2dataset, eval_pdf, get_value, pll, set_values
+from ...utils import array2dataset, eval_pdf, get_value, pll, set_values, api
 # from ...utils.fit.api_check import LossLike, MinimumLike, MinimizerLike # is_valid_fitresult, is_valid_loss
 from ...utils.fit.diverse import get_ndims
 # from ..parameters import POI, POIarray
@@ -109,13 +110,12 @@ class AsymptoticCalculator(BaseCalculator):
 
     def __init__(self,
         loss : api.LossLike, 
-        params : pt.PyTree[api.ParameterLike], 
+        params : dict[api.ParameterKey, api.ParameterLike], 
         *loss_args,
         data : api.Data = None,
-        spaces : pt.PyTree[api.SpaceLike] = None,
-        models : pt.PyTree[api.BinnedModelLike | api.UnbinnedModelLike] = None,
-        is_binned : pt.PyTree[bool] = None,
-        asimov_bins: pt.PyTree[int] = None,
+        models : dict[api.DataKey, api.ModelLike] = None,
+        dataset_type : dict[api.DataKey, str] = None,
+        asimov_bins: dict[api.DataKey, int | ArrayLike] = None,
         minimizer : api.MinimizerLike = None, 
         **kwargs
     ):

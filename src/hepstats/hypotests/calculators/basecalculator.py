@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any, Callable, Iterable
 import numpy as np
 
-from ...utils import base_sample, base_sampler, pll, api, pt, POIarray, POI
+from ...utils import base_sample, base_sampler, pll, api, POIarray, POI
 from ..hypotests_object import HypotestsObject
 # from ..parameters import POI, POIarray, asarray
 from ..toyutils import ToyResult, ToysManager
@@ -15,10 +15,11 @@ class BaseCalculator(HypotestsObject):
 
     def __init__(self, 
         loss : api.LossLike, 
-        params : pt.PyTree[api.ParameterLike], 
+        params : dict[api.ParameterKey, api.ParameterLike], 
         *loss_args,
         data : api.Data = None,
-        minimizer : api.MinimizerLike = None, 
+        minimizer : api.MinimizerLike = None,
+        blind : bool = True,
         **kwargs
     ):
         """
@@ -41,13 +42,22 @@ class BaseCalculator(HypotestsObject):
             >>> calc = BaseCalculator(input=loss, minimizer=Minuit())
         """
         super().__init__(loss, params, *loss_args, data=None, minimizer=minimizer, **kwargs)
-
+        
+        self._blind = blind
         self._obs_nll = {}
 
         # self._parameters = {}
         # for m in self.model:
         #     for d in m.get_params():
         #         self._parameters[d.name] = d
+
+    @property
+    def blind(self):
+        return self._blind
+
+    @blind.setter
+    def blind(self, blind : bool):
+        self._blind = blind
 
     def obs_nll(self, pois: POIarray) -> np.ndarray:
         """Compute observed negative log-likelihood values for given parameters of interest.
@@ -116,12 +126,12 @@ class BaseCalculator(HypotestsObject):
         #         bestfitpoi = POI(poi_spec, bestfitpoi_val)
         #         self._obs_nll[bestfitpoi] = self.bestfit.fmin
 
-        bestfitpoi_val = poinull.param_path(self.bestfit.params)
-        assert bestfitpoi_val.ndim == 0, "qobs cannot be calculated with array valued POI"
+        bestfitpoi_val = self.bestfit.params[poinull.param_key]
+        assert np.shape(bestfitpoi_val) == tuple(), "qobs cannot be calculated with array valued POI"
         
         if qtilde:
             bestfitpoi_val = max(bestfitpoi_val, 0)
-        bestfitpoi = POI(poinull.param_path, bestfitpoi_val)
+        bestfitpoi = POI(poinull.param_key, bestfitpoi_val)
         
         nll_bestfitpoi_obs = self.obs_nll(bestfitpoi)
         nll_poinull_obs = self.obs_nll(poinull)
@@ -264,9 +274,12 @@ class BaseCalculator(HypotestsObject):
         if not isinstance(pois, POIarray):
             raise ValueError("Not POI or POIarray")
 
-        reference_param = pois.param_path(self._user_params)
-        if not isinstance(reference_param, api.ParameterLike):
-            raise ValueError("POIarray.param_path needs to be point to a Parameter")
+        if pois.param_key not in self.parameters:
+            raise ValueError("{} is not in calculator's parameters".format(pois.param_key))
+        reference_param = self.parameters[pois.param_key]
+
+        # if not isinstance(reference_param, api.ParameterLike):
+        #     raise ValueError("{} needs to point to a Parameter".format(param_key))
         if not reference_param.floating:
             raise ValueError("POI must point to a floating parameter")
         if np.shape(reference_param.value) != np.shape(pois.values)[1:]:

@@ -47,11 +47,10 @@ def eval_pdf(model, x, params=None, allow_extended=False):
                 stack.enter_context(param.set_value(value))
         return pdf(model, x)
 
-
 def pll(pois : POI | Collection[POI],
     minimizer : api.MinimizerLike, 
     loss : api.LossLike, 
-    params : api.InternalParameterCollection,
+    params : dict[api.ParameterKey, api.InternalParameter],
     *loss_args,
     data : api.Data = None,
     init=None
@@ -61,17 +60,17 @@ def pll(pois : POI | Collection[POI],
     if isinstance(pois, POI):
         pois = [pois]
 
-    access_pois = lambda tree: tuple(p.param_path(tree) for p in pois)
-    new_values = pt.at(access_pois, params.values, [p.value for p in pois])
-    new_floatings = pt.at(access_pois, params.floatings, replace_fn=lambda f: np.broadcast_to(False, np.shape(f)))
-    
-    new_params = api.InternalParameterCollection(values=new_values, lowers=params.lowers, uppers=params.uppers, floatings=new_floatings)
+    new_params = {k : api.InternalParameter(params[k], trusting=True) for k in params}
+    for p in pois:
+        new_params[p.param_key].value = p.value
+        new_params[p.param_key].floating = False
 
-    if pt.any(new_params.floatings):
+    if np.any([np.any(new_params[k].floating) for k in new_params]):
         minimum = minimizer.minimize(loss, new_params, *loss_args, data=data)
         return minimum.fmin
     else:
-        return loss(new_params.values, data, *loss_args) if data is not None else loss(new_params.values, *loss_args)
+        new_values = {k : new_params[k].value for k in new_params}
+        return loss(new_values, data, *loss_args) if data is not None else loss(new_values, *loss_args)
 
     # with ExitStack() as stack:
     #     for p in pois:

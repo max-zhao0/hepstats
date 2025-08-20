@@ -17,8 +17,12 @@ class POIarray:
     """
     Class for parameters of interest with multiple values:
     """
-
-    def __init__(self, param_path : api.ParameterPathLike, values: Collection[np.ndarray]):
+    def __init__(
+        self, 
+        key : api.ParameterKey, 
+        values: Collection[np.ndarray]
+    ):
+        
         """
         Args:
             parameter: the parameter of interest
@@ -33,16 +37,15 @@ class POIarray:
             >>> poi = POIarray(Nsig, value=np.linspace(0,10,10))
         """
 
-        if not isinstance(param_path, api.ParameterPathLike):
-            msg = f"{param_spec} is not a valid parameter specification!"
-            raise ValueError(msg)
+        # if not isinstance(key, api.ParameterPathLike):
+        #     msg = f"{param_spec} is not a valid parameter specification!"
+        #     raise ValueError(msg)
 
         if not isinstance(values, Collection):
             msg = "A list/array of values of the POI is required."
             raise TypeError(msg)
 
-        self.param_path = param_path
-        # self.name = parameter.name
+        self.param_key = key
         self._values = np.array(values, dtype=np.float64)
         self._ndim = 1
         self._array_valued = isinstance(values[0], Collection)
@@ -55,43 +58,44 @@ class POIarray:
         return self._values
 
     def __repr__(self):
-        return f"POIarray('{self.param_path.__repr__()}', values={self.values})"
+        return f"POIarray('{self.param_key.__repr__()}', values={self.values})"
 
     def __getitem__(self, i):
         """
         Get the i-th element the array of values of the **POIarray**.
         """
-        return POI(self.param_path, self.values[i])
+        return POI(self.param_key, self.values[i])
 
     def __iter__(self):
         for v in self.values:
-            yield POI(self.param_path, v)
+            yield POI(self.param_key, v)
 
     def __len__(self):
         return len(self.values)
 
     def __eq__(self, other):
-        raise NotImplementedError("POI comparison not allowed")
-        # if not isinstance(other, POIarray):
-        #     return NotImplemented
+        if not isinstance(other, POIarray):
+            return NotImplementedError
 
-        # if len(self) != len(other):
-        #     return False
+        if len(self) != len(other):
+            return False
 
-        # values_equal = self.values == other.values
-        # # name_equal = self.name == other.name
-        # return values_equal.all() # and name_equal
+        if not np.shape(self.values) == np.shape(other.values):
+            return False
+            
+        values_equal = self.values == other.values
+        name_equal = self.param_key == other.param_key
+        return values_equal.all() and name_equal
 
     def __hash__(self):
-        raise NotImplementedError("POI hashing not allowed")
-        # return hash((self.name, self.values.tostring()))
+        return hash((self.param_key, self.values.tostring()))
 
-    @property
-    def ndim(self):
-        """
-        Returns the number of dimension of the **POIarray**.
-        """
-        return self._ndim
+    # @property
+    # def ndim(self):
+    #     """
+    #     Returns the number of dimension of the **POIarray**.
+    #     """
+    #     return self._ndim
 
     @property
     def shape(self):
@@ -132,7 +136,7 @@ class POI(POIarray):
     Class for single value parameter of interest:
     """
 
-    def __init__(self, param_path : api.ParameterPathLike, value: int | float):
+    def __init__(self, key : api.ParameterKey, value: int | float):
         """
         Args:
             parameter: the parameter of interest
@@ -149,7 +153,7 @@ class POI(POIarray):
         #     msg = "A single value for the POI is required."
         #     raise TypeError(msg)
 
-        super().__init__(param_path=param_path, values=[value])
+        super().__init__(key=key, values=[value])
         self._value = value
 
     @property
@@ -174,7 +178,7 @@ class POI(POIarray):
     #     return value_equal # and name_equal
 
     def __repr__(self):
-        return f"POI('{self.param_path.__repr__()}', value={self.value})"
+        return f"POI('{self.param_key.__repr__()}', value={self.value})"
 
     # def __hash__(self):
     #     return hash((self.name, self.value))
@@ -187,4 +191,4 @@ def asarray(poi: POI) -> POIarray:
     Args:
         poi: the parameter of interest.
     """
-    return POIarray(param_path=poi.param_path, values=poi.values)
+    return POIarray(param_key=poi.param_key, values=poi.values)

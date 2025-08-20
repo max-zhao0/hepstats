@@ -1,46 +1,56 @@
 from typing import NamedTuple
 import numpy as np
+from numpy.typing import ArrayLike
 
-from ..pytree import pt
+# from ..pytree import pt
 # from ..api import Data, ParameterLike, InternalParameter, LossLike, convert_params
 from .. import api
+
+def fast_reshape(arr, shape):
+    if not shape:
+        return arr[0]
+    elif len(shape) == 1:
+        return arr
+    else:
+        return np.reshape(arr, shape)
 
 class Minimum(NamedTuple):
     valid : bool
     fmin : float
-    params : pt.PyTree[np.ndarray[float]]
+    params : dict[api.ParameterKey, float | ArrayLike]
 
 class IMinuit:
-    def __init__(self):
+    def __init__(self, trusting=False):
         from iminuit import Minuit
         self.Minuit = Minuit
+        self.trusting = trusting
 
-    def minimize(self, 
-        loss : api.LossLike, 
-        params : pt.PyTree[api.ParameterLike] | api.InternalParameterCollection,  
-        *loss_args, 
-        data : api.Data = None
-        ) -> Minimum:
+    # def minimize(self, 
+    #     loss : api.LossLike, 
+    #     params : pt.PyTree[api.ParameterLike] | api.InternalParameterCollection,  
+    #     *loss_args, 
+    #     data : api.Data = None
+    #     ) -> Minimum:
 
 
-        if not isinstance(params, api.InternalParameterCollection):
-            params = api.convert_params(params)
+    #     if not isinstance(params, api.InternalParameterCollection):
+    #         params = api.convert_params(params)
         
-        values_flat, unravel_func = pt.ravel(params.values)
-        lowers_flat, _ = pt.ravel(params.lowers)
-        uppers_flat, _ = pt.ravel(params.uppers)
-        floatings_flat, _ = pt.ravel(params.floatings)
+    #     values_flat, unravel_func = pt.ravel(params.values)
+    #     lowers_flat, _ = pt.ravel(params.lowers)
+    #     uppers_flat, _ = pt.ravel(params.uppers)
+    #     floatings_flat, _ = pt.ravel(params.floatings)
 
-        # call_loss = lambda x: loss(unravel_func(x), *loss_args)
-        assert len(values_flat) == len(lowers_flat) == len(uppers_flat) == len(floatings_flat)
-        call_loss = (lambda x: loss(unravel_func(x), data, *loss_args)) if data is not None else (lambda x: loss(unravel_func(x), *loss_args))
+    #     # call_loss = lambda x: loss(unravel_func(x), *loss_args)
+    #     assert len(values_flat) == len(lowers_flat) == len(uppers_flat) == len(floatings_flat)
+    #     call_loss = (lambda x: loss(unravel_func(x), data, *loss_args)) if data is not None else (lambda x: loss(unravel_func(x), *loss_args))
         
-        minuit = self.Minuit(call_loss, values_flat)
-        minuit.fixed[:] = np.invert(floatings_flat)
-        minuit.limits[:] = np.stack((lowers_flat, uppers_flat), axis=-1)
-        minuit.migrad()
+    #     minuit = self.Minuit(call_loss, values_flat)
+    #     minuit.fixed[:] = np.invert(floatings_flat)
+    #     minuit.limits[:] = np.stack((lowers_flat, uppers_flat), axis=-1)
+    #     minuit.migrad()
         
-        return Minimum(valid=minuit.valid, fmin=minuit.fval, params=unravel_func(np.array(minuit.values)))
+    #     return Minimum(valid=minuit.valid, fmin=minuit.fval, params=unravel_func(np.array(minuit.values)))
         
     # def minimize(self, 
     #     loss : api.LossLike, 
@@ -76,6 +86,7 @@ class IMinuit:
         
     #     return Minimum(fmin=minuit.fval, params=restore(minuit.values), loss=loss)
 
+<<<<<<< HEAD
     # def minimize(self, 
     #     loss : LossLike, 
     #     params : pt.PyTree[Union[InternalParameter, ParameterLike]], 
@@ -86,31 +97,59 @@ class IMinuit:
     #         param_lst = convert_params(param_lst)
     #     elif not isinstance(param_lst[0], InternalParameter):
     #         raise ValueError("params must contain ParameterLike or InternalParameter")
+=======
+    def minimize(self, 
+        loss : api.LossLike, 
+        params : dict[api.ParameterKey, api.ParameterLike], 
+        data : api.Data = None, *loss_args
+    ) -> Minimum:
+        param_keys = params.keys()
+        param_lst = params.values()
+>>>>>>> 086c2ae (Rewrite to dict-like interface)
 
-    #     values, bounds, floating = list(zip(*param_lst))
-    #     fixed = np.invert(floating)
+        # Check parameters if minimizer is not trusting
+        if not self.trusting:
+            for p in param_lst:
+                if not isinstance(p, api.ParameterLike):
+                    raise ValueError("Parameters must be ParameterLike")
+                try:
+                    np.broadcast_shapes(np.shape(p.value), np.shape(p.upper), np.shape(p.lower), np.shape(p.floating))
+                except ValueError:
+                    raise ValueError("upper, lower, and floating must be broadcastable to value")
 
-    #     slices = np.empty(len(values))
-    #     values_arrays = []
-    #     bounds_arrays = []
-    #     for ip, (v, b) in enumerate(zip(values, bounds)):
-    #         values_arrays.append(np.atleast_1d(v))
-    #         bounds_arrays.append(np.atleast_2d(b))
-    #         slices[ip] = slices[ip-1] + values_arrays[-1].size if ip > 0 else values_arrays[-1].size
-
-    #     assert slices[-1] == len(values_arrays), "Slicing error in minimizer"
-
-    #     split = lambda x: [arr[0] if arr.size == 1 else arr for arr in np.split(x, slices[:-1])]
+        values, uppers, lowers, floatings = [], [], [], []
+        slices = np.empty(len(param_lst), dtype=slice)
+        shapes = []
         
-    #     if np.max(values_sizes) > 1:
-    #         p0 = np.concatenate(values_arrays)
-    #         flat_bounds = np.concatenate(bounds_arrays, axis=0)
-    #         call_loss = lambda x: loss(pt.unflatten(treedef, split(x)))
-    #     else:
-    #         p0 = values
-    #         flat_bounds = bounds
-    #         call_loss = lambda x: loss(pt.unflatten(treedef, x))
+        for ip, p in enumerate(param_lst):
+            vshape = np.shape(p.value)
+            shapes.append(vshape)
+            if vshape == tuple():
+                vshape = (1,)
+                
+            values.append(np.atleast_1d(p.value).flatten())
+            uppers.append(np.broadcast_to(p.upper, vshape).flatten())
+            lowers.append(np.broadcast_to(p.lower, vshape).flatten())
+            floatings.append(np.broadcast_to(p.floating, vshape).flatten())
+
+            # slices[ip] = slices[ip-1] + values[-1].size if ip > 0 else values[-1].size
+            slices[ip] = slice(slices[ip-1].stop, slices[ip-1].stop + values[-1].size) if ip > 0 else slice(0, values[-1].size)
+
+        p0 = np.concatenate(values)
+        lowers_flat = np.concatenate(lowers)
+        uppers_flat = np.concatenate(uppers)
+        floatings_flat = np.concatenate(floatings)
+        fixed_flat = np.invert(floatings_flat)
+
+        # restore = lambda x: {key : np.reshape(arr, s) for key, arr, s in zip(np.split(x, slices[:-1]), shapes, param_keys)} # explicit slices
+        restore = lambda x: {key : fast_reshape(x[sl], sh) for key, sl, sh in zip(param_keys, slices, shapes)}
+        call_loss = (lambda x: loss(restore(x), *loss_args)) if data is None else (lambda x: loss(restore(x), data, *loss_args))
+
+        # assert slices[-1] == len(p0), "Slicing error in minimizer"
         
-    #     minuit = self.Minuit(..., p0, fixed=..., limits=flat_bounds)
-    #     minuit.migrad()
-    #     return Minimum(minuit.fval, pt.unflatten(treedef, split(minuit.values)))
+        minuit = self.Minuit(call_loss, p0)
+        minuit.fixed[:] = fixed_flat
+        minuit.limits[:] = np.stack((lowers_flat, uppers_flat), axis=-1)
+        minuit.migrad()
+        
+        return Minimum(valid=minuit.valid, fmin=minuit.fval, params=restore(minuit.values))

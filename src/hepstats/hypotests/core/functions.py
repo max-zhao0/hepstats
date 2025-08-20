@@ -1,4 +1,6 @@
 from scipy.stats import norm
+import numpy as np
+from numpy.typing import ArrayLike
 
 from ..calculators.basecalculator import BaseCalculator
 from ...utils import api, POI
@@ -13,12 +15,12 @@ def _api_check(calculator, poinull, poialt = None):
 
 def discovery(
     calculator : BaseCalculator, 
-    poinull_path : api.ParameterPathLike, 
+    poinull_key : api.ParameterKey, 
     poinull_value : float = 0
 ):
-    poinull = POI(poinull_path, poinull_value)
+    poinull = POI(poinull_key, poinull_value)
     _api_check(calculator, poinull)
-    if poinull.param_path(calculator.parameters.values).ndim > 0:
+    if np.shape(calculator.parameters[poinull.param_key].value) != tuple():
         raise ValueError("Discovery test only supported for scalar valued parameters")
 
     pnull, _ = calculator.pvalue(poinull, onesideddiscovery=True)
@@ -27,3 +29,14 @@ def discovery(
     significance = norm.ppf(1.0 - pnull)
     
     return pnull, significance
+
+def upperlimit(
+    calculator: BaseCalculator,
+    poinull_key: api.ParameterKey,
+    poinull_key: float | ArrayLike,
+    poialt_key: api.ParameterKey,
+    poialt_key: float,
+    qtilde: bool = False
+):
+    
+    _api_check(calculator, poinull, poialt)

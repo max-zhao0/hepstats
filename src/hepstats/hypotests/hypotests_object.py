@@ -10,7 +10,7 @@ import numpy as np
 # from ..utils.fit
 # # from .parameters import POI
 # from ..utils.fit import minimizers
-from ..utils import pt, api, minimizers
+from ..utils import api, minimizers
 from ..utils import get_nevents, set_values_once
 
 class HypotestsObject:
@@ -23,7 +23,7 @@ class HypotestsObject:
 
     def __init__(self, 
         loss : api.LossLike, 
-        params : pt.PyTree[api.ParameterLike], 
+        params : dict[api.ParameterKey, api.ParameterLike], 
         *loss_args,
         data : api.Data = None,
         minimizer : api.MinimizerLike = None, 
@@ -36,15 +36,15 @@ class HypotestsObject:
 
         self._loss = loss
         self._bestfit = None 
-        self._parameters = api.convert_params(params)
-        self._user_params = params
+        self._parameters = {k : api.InternalParameter(params[k]) for k in params}
+        # self._user_params = params
         self._data = data
         self._loss_args = loss_args
 
         if minimizer is None:
             self._minimizer = minimizers.IMinuit()
         elif not isinstance(minimizer, api.MinimizerLike):
-            msg = f"{minimizer} is not a valid minimizer !"
+            msg = f"{minimizer} is not a valid minimizer!"
             raise ValueError(msg)
         else:
             self._minimizer = minimizer
