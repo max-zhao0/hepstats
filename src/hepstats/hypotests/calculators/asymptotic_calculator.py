@@ -9,9 +9,9 @@ from numpy.typing import ArrayLike
 import numpy as np
 from scipy.stats import norm
 
-from ...utils import array2dataset, eval_pdf, get_value, pll, set_values, api
+from ...utils import pll, api, sample
 # from ...utils.fit.api_check import LossLike, MinimumLike, MinimizerLike # is_valid_fitresult, is_valid_loss
-from ...utils.fit.diverse import get_ndims
+from ...utils.fit.diverse import get_ndims, sample
 # from ..parameters import POI, POIarray
 from .basecalculator import BaseCalculator
 
@@ -109,14 +109,15 @@ class AsymptoticCalculator(BaseCalculator):
         UNBINNED_TO_BINNED_LOSS[ExtendedUnbinnedNLL] = ExtendedBinnedNLL
 
     def __init__(self,
-        loss : api.LossLike, 
+        nll : api.LossLike | api.NegativeLogLikelihoodlike, 
         params : dict[api.ParameterKey, api.ParameterLike], 
         *loss_args,
-        data : api.Data = None,
-        models : dict[api.DataKey, api.ModelLike] = None,
-        dataset_type : dict[api.DataKey, str] = None,
-        asimov_bins: dict[api.DataKey, int | ArrayLike] = None,
+        data : dict[api.DataKey, ArrayLike] = None, # CAN BE NONE
+        models : dict[api.DataKey, api.ModelLike] = None, # CAN BE NONE
         minimizer : api.MinimizerLike = None, 
+        extended_unbinned_yield_correction : bool | dict[api.DataKey, bool] = True, # CANNOT BE NONE
+        beta : int | dict[api.DataKey, int] = 100, # CANNOT BE NONE
+        blind : bool = True,
         **kwargs
     ):
         """Asymptotic calculator class using Wilk's and Wald's asymptotic formulae.
@@ -144,237 +145,94 @@ class AsymptoticCalculator(BaseCalculator):
             >>>
             >>> calc = AsymptoticCalculator(input=loss, minimizer=Minuit(), asimov_bins=100)
         """
-        # if is_valid_fitresult(input):
-        #     loss = input.loss
-        # elif is_valid_loss(input):
-        #     loss = input
-        # else:
-        #     msg = "input must be a fitresult or a loss"
-        #     raise ValueError(msg)
 
-        super().__init__(loss, params, *loss_args, data=data, minimizer=minimizer, **kwargs)
-        asimov_bins_converted = [] # self._check_convert_asimov_bins(asimov_bins, loss.data)
-        
-        self._asimov_bins = asimov_bins_converted
+        super().__init__(nll, params, *loss_args, data=data, models=models, minimizer=minimizer, blind=blind, **kwargs)
+
+        self._unbinned_corr = self.format_datalike_dict(extended_unbinned_yield_correction, bool)
+        self._beta = self.format_datalike_dict(beta, int)
+
         self._asimov_dataset: dict = {}
+        self._asimov_norms : dict = {}
         self._asimov_loss: dict = {}
         self._binned_loss = None
         # cache of nll values computed with the asimov dataset
         self._asimov_nll: dict[POI, np.ndarray] = {}
 
-    def _convert_to_binned(self, loss, asimov_bins):
-        """Converts the loss to binned if necessary."""
+    @property
+    def extended_unbinned_yield_correction(self):
+        return self._unbinned_corr
 
-        for unbinned_loss, binned_loss in self.UNBINNED_TO_BINNED_LOSS.items():
-            if type(loss) is unbinned_loss:
-                datasets = []
-                models = []
-                for d, m, nbins in zip(loss.data, loss.model, asimov_bins):
-                    binnings = m.space.with_binning(nbins)
-                    model_binned = m.to_binned(binnings)
-                    data_binned = d.to_binned(binnings)
-                    datasets.append(data_binned)
-                    models.append(model_binned)
-                loss = binned_loss(model=models, data=datasets, constraints=loss.constraints)
-                break
-            if type(loss) is binned_loss:
-                break
-        else:
-            loss = False
+    @extended_unbinned_yield_correction.setter
+    def extended_unbinned_yield_correction(self, value : bool | dict[api.DataKey, bool]):
+        self._asimov_dataset: dict = {}
+        self._asimov_norms : dict = {}
+        self._asimov_loss: dict = {}
+        self._unbinned_corr = self.format_datalike_dict(value, bool)
 
-        return loss
+    @property
+    def beta(self):
+        return self._beta
 
-    def _get_binned_loss(self):
-        """Returns the binned loss."""
-        binned_loss = self._binned_loss
-        if binned_loss is None:
-            binned_loss = self._convert_to_binned(self.loss, self._asimov_bins)
-            self._binned_loss = binned_loss
-        return binned_loss
+    @beta.setter
+    def beta(self, value : int | dict[api.DataKey, int]):
+        self._asimov_dataset: dict = {}
+        self._asimov_norms : dict = {}
+        self._asimov_loss: dict = {}
+        self._beta = self.format_datalike_dict(value, int)
 
-    @staticmethod
-    def _check_convert_asimov_bins(asimov_bins, datasets) -> list[list[int]]:  # TODO: we want to allow axes from UHI
-        nsimultaneous = len(datasets)
-        ndims = [get_ndims(dataset) for dataset in datasets]
-        if asimov_bins is None:
-            asimov_bins = [[math.ceil(100 / ndim**0.5)] * ndim for ndim in ndims]
-        if isinstance(asimov_bins, int):
-            if nsimultaneous == 1:
-                asimov_bins = [[asimov_bins] * ndim for ndim in ndims]
-            else:
-                msg = (
-                    "asimov_bins is an int but there are multiple datasets. "
-                    "Please provide a list of int for each dataset."
-                )
-                raise ValueError(msg)
-        elif isinstance(asimov_bins, list):
-            if len(asimov_bins) != nsimultaneous:
-                msg = "asimov_bins is a list but the number of elements is different from the number of datasets."
-                raise ValueError(msg)
-        else:
-            msg = f"asimov_bins must be an int or a list of int (or list of list of int), not {type(asimov_bins)}"
-            raise TypeError(msg)
-
-        for i, (asimov_bin, ndim) in enumerate(zip(asimov_bins, ndims)):
-            if isinstance(asimov_bin, int):
-                if ndim == 1:
-                    asimov_bins[i] = [asimov_bin]
-                else:
-                    msg = f"asimov_bins[{i}] is not a list but the dataset has {ndim} dimensions."
-                    raise ValueError(msg)
-            elif isinstance(asimov_bin, list):
-                if len(asimov_bin) != ndim:
-                    msg = (
-                        f"asimov_bins[{i}] is a list with {len(asimov_bin)} elements but the"
-                        f" dataset has {ndim} dimensions."
-                    )
-                    raise ValueError(msg)
-                if not all(isinstance(x, int) for x in asimov_bin):
-                    msg = f"asimov_bins[{i}] is a list with non-int elements."
-                    raise ValueError(msg)
-            else:
-                msg = f"asimov_bins[{i}] is not an int or a list but a {type(asimov_bin)}."
-                raise TypeError(msg)
-        assert isinstance(asimov_bins, list), "INTERNAL ERROR: Could not correctly convert asimov_bins"
-        assert all(
-            isinstance(asimov_bin, list) and len(asimov_bin) == ndim for ndim, asimov_bin in zip(ndims, asimov_bins)
-        ), "INTERNAL ERROR: Could not correctly convert asimov_bins, dimensions wrong"
-        return asimov_bins
-
-    # @staticmethod
-    # def check_pois(pois: POI | POIarray):
-    #     """
-    #     Checks if the parameter of interest is a :class:`hepstats.parameters.POIarray` instance.
-
-    #     Args:
-    #         pois: the parameter of interest to check.
-
-    #     Raises:
-    #         TypeError: if pois is not an instance of :class:`hepstats.parameters.POIarray`.
-    #     """
-
-    #     msg = "POI/POIarray is required."
-    #     if not isinstance(pois, POIarray):
-    #         raise TypeError(msg)
-    #     if pois.ndim > 1:
-    #         msg = "Tests using the asymptotic calculator can only be used with one parameter of interest."
-    #         raise NotImplementedError(msg)
-
-    def asimov_dataset(self, poi: POI, ntrials_fit: int | None = None):
-        """Gets the Asimov dataset for a given alternative hypothesis.
-
-        Args:
-            poi: parameter of interest of the alternative hypothesis.
-            ntrials_fit: (default: 5) maximum number of fits to perform
-
-        Returns:
-             The asimov dataset.
-
-        Example with **zfit**:
-            >>> poialt = POI(mean, 1.2)
-            >>> dataset = calc.asimov_dataset(poialt)
-
-        """
-        if ntrials_fit is None:
-            ntrials_fit = 5
+    def asimov_dataset(self, poi: POI, ntrials_fit: int = 5):
         if poi not in self._asimov_dataset:
-            binned_loss = self._get_binned_loss()
-            if binned_loss is False:  # LEGACY
-                model = self.model
-                data = self.data
-                loss = self.loss
+            assert poi not in self._asimov_norms
+            
+            if self.blind:
+                # Use nominal values
+                asimov_param_values = {k : self.parameters[k].value for k in self.parameters}
             else:
-                model = binned_loss.model
-                data = binned_loss.data
-                loss = binned_loss
-            minimizer = self.minimizer
-            oldverbose = minimizer.verbosity
-            minimizer.verbosity = 0
+                # Fit over nuisances
+                asimov_param_values = pll(poi, self.minimizer, self.loss, self.parameters, ntrials_fit=ntrials_fit).params
+                
+            asimov_dataset = {}
+            asimov_norm = {}
+            for data_key in self.data:
+                model = self.models[data_key]
+                beta = self.beta[data_key]
 
-            poiparam = poi.parameter
-            poivalue = poi.value
+                if isinstance(model, api.BinnedModelLike):
+                    raise NotImplementedError
+                elif isinstance(model, api.UnbinnedModelLike):
+                    norm = model.get_yield(asimov_param_values) if isinstance(model, api.ExtendedUnbinnedModelLike) else model.N
 
-            msg = "\nGet fitted values of the nuisance parameters for the"
-            msg += " alternative hypothesis!"
-
-            self.set_params_to_bestfit()
-            poiparam.floating = False
-
-            if not self.loss.get_params():
-                values = {poiparam: {"value": poivalue}}
-
-            else:
-                with poiparam.set_value(poivalue):
-                    for _trial in range(ntrials_fit):
-                        minimum = minimizer.minimize(loss=loss)
-                        if minimum.valid:
-                            break
-
-                        # shift other parameter values to change starting point of minimization
-                        for p in self.parameters:
-                            if p != poiparam:
-                                p.set_value(get_value(p) * np.random.normal(1, 0.02, 1)[0])
+                    if not self.blind:
+                        nsamples = int(beta * max(norm, len(self.data[data_key])))
                     else:
-                        msg = "No valid minimum was found when fitting the loss function for the alternative"
-                        msg += f"hypothesis ({poi}), after {ntrials_fit} trials."
-                        warnings.warn(msg, stacklevel=2)
+                        nsamples = int(beta * norm)
 
-                values = dict(minimum.params)
-                values[poiparam] = {"value": poivalue}
+                    # Remember the normalization under Asimov parameters, to be used to correct the Asimov loss if necessary
+                    asimov_norm[data_key] = norm
+                    asimov_dataset[data_key] = sample(model, asimov_param_values, nsamples=nsamples, minimizer=self.minimizer)
+                else:
+                    raise NotImplementedError
 
-            poiparam.floating = True
-            minimizer.verbosity = oldverbose
+            self._asimov_norms[poi] = asimov_norm
+            self._asimov_dataset[poi] = asimov_dataset
 
-            asimov_data = []
-            asimov_bins = self._asimov_bins
-            assert len(asimov_bins) == len(data)
-            is_binned_loss = isinstance(loss, tuple(self.UNBINNED_TO_BINNED_LOSS.values()))
-            for _i, (m, d, nbins) in enumerate(zip(model, data, asimov_bins)):
-                dataset = generate_asimov_dataset(d, m, is_binned_loss, nbins, values)
-                asimov_data.append(dataset)
-
-            self._asimov_dataset[poi] = asimov_data
-
+        assert poi in self._asimov_norms
         return self._asimov_dataset[poi]
 
-    def _asimov_dataset(self, poi: POI, ntrials_fit: int | None = None):
-        if poi not in self._asimov_dataset:
-            model = binned_loss.model
-            data = binned_loss.data
-            loss = binned_loss
-            binned_loss = self._get_binned_loss()
-            minimizer = self.minimizer
+    def asimov_diagnostics(self, poi : POI):
+        if self.blind:
+            asimov_param_values = {k : self.parameters[k].value for k in self.parameters}
+        else:
+            asimov_param_values = pll(poi, self.minimizer, self.loss, self.parameters).params
 
-            poiparam = poi.parameter
-            poivalue = poi.value
-            self.set_params_to_bestfit()
-            poiparam.floating = False
+        asimov_fitted_param_values = pll([], self.minimizer, self.asimov_loss(poi), self.parameters).params
+        print("asimov_param_values = {}".format(asimov_param_values))
+        print("asimov_fitted_param_values = {}".format(asimov_fitted_param_values))
 
-            if not self.loss.get_params():
-                values = {poiparam: {"value": poivalue}}
-            else:
-                with poiparam.set_value(poivalue):
-                    for _trial in range(ntrials_fit):
-                        minimum = minimizer.minimize(loss=loss)
-                        if minimum.valid:
-                            break
-                        for p in self.parameters:
-                            if p != poiparam:
-                                p.set_value(get_value(p) * np.random.normal(1, 0.02, 1)[0])
-
-                values = dict(minimum.params)
-                values[poiparam] = {"value": poivalue}
-            poiparam.floating = True
-
-            asimov_data = []
-            asimov_bins = self._asimov_bins
-            is_binned_loss = isinstance(loss, tuple(self.UNBINNED_TO_BINNED_LOSS.values()))
-            for _i, (m, d, nbins) in enumerate(zip(model, data, asimov_bins)):
-                dataset = generate_asimov_dataset(d, m, is_binned_loss, nbins, values)
-                asimov_data.append(dataset)
-
-            self._asimov_dataset[poi] = asimov_data
-        return self._asimov_dataset[poi]
+    def asimov_norm(self, poi: POI):
+        if poi not in self._asimov_norms:
+            self.asimov_dataset(poi)
+        return self._asimov_norms[poi]
 
     def asimov_loss(self, poi: POI):
         """Constructs a loss function using the Asimov dataset for a given alternative hypothesis.
@@ -389,14 +247,28 @@ class AsymptoticCalculator(BaseCalculator):
             >>> poialt = POI(mean, 1.2)
             >>> loss = calc.asimov_loss(poialt)
         """
-        oldloss = self._get_binned_loss()
-        if oldloss is False:  # LEGACY
-            oldloss = self.loss
-        if oldloss is None:
-            msg = "No loss function was provided."
-            raise ValueError(msg)
+        if self.models is None:
+            raise ValueError("Performing a statistical procedure that requires models, but none provided to calculator")
+            
         if poi not in self._asimov_loss:
-            loss = self.lossbuilder(oldloss.model, self.asimov_dataset(poi), oldloss=oldloss)
+            asimov_dataset = self.asimov_dataset(poi)
+            asimov_norm = self.asimov_norm(poi)
+
+            unbinned_corrections = []
+            for data_key in asimov_dataset:
+                model = self.models[data_key]
+                
+                if isinstance(model, api.UnbinnedModelLike):
+                    # Downweight oversampling
+                    asimov_size = len(asimov_dataset[data_key])
+                    corr = lambda params: (1 - asimov_norm[data_key] / asimov_size) * np.sum(np.log(model.pdf(asimov_dataset[data_key], params)))
+                    unbinned_corrections.append(corr)
+                
+                    if isinstance(model, api.ExtendedUnbinnedModelLike) and self._unbinned_corr[data_key]:
+                        # Correct yield factor in unbinned asimov
+                        unbinned_corrections.append(lambda params: (asimov_size - asimov_norm[data_key]) * np.log(model.get_yield(params)))
+            
+            loss = self.lossbuilder(self.nll, asimov_dataset, unbinned_corrections)
             self._asimov_loss[poi] = loss
 
         return self._asimov_loss[poi]
@@ -422,12 +294,10 @@ class AsymptoticCalculator(BaseCalculator):
         self.check_pois(pois)
         self.check_pois(poialt)
 
-        minimizer = self.minimizer
         ret = np.empty(pois.shape)
         for i, p in enumerate(pois):
             if p not in self._asimov_nll:
-                loss = self.asimov_loss(poialt)
-                nll = pll(minimizer, loss, p)
+                nll = pll(p, self.minimizer, self.asimov_loss(poialt), self.parameters, *self.loss_args).fmin
                 self._asimov_nll[p] = nll
             ret[i] = self._asimov_nll[p]
         return ret
@@ -473,7 +343,7 @@ class AsymptoticCalculator(BaseCalculator):
 
             pnull = np.where(cond, pnull_2, pnull)
 
-        print("pnull = {}, qobs = {}".format(pnull, qobs))
+        # print("pnull = {}, qobs = {}".format(pnull, qobs))
 
         return pnull
 
@@ -506,12 +376,14 @@ class AsymptoticCalculator(BaseCalculator):
             >>> poialt = POI(mean, [1.2])
             >>> q = calc.qalt(poinull, poialt)
         """
-        param = poialt.parameter
+        poialt_bf = POI(poialt.param_key, 0) if qtilde and poialt.value < 0 else poialt
 
-        poialt_bf = POI(param, 0) if qtilde and poialt.value < 0 else poialt
+        # print("poialt_bf = {}, poialt = {}, poinull = {}".format(poialt_bf, poialt, poinull))
 
         nll_poialt_asy = self.asimov_nll(poialt_bf, poialt)
         nll_poinull_asy = self.asimov_nll(poinull, poialt)
+
+        # print("nll_poialt_asy = {}, nll_poinull_asy = {}".format(nll_poialt_asy, nll_poinull_asy))
 
         return self.q(
             nll1=nll_poinull_asy,
@@ -592,6 +464,8 @@ class AsymptoticCalculator(BaseCalculator):
         else:
             qalt = None
             palt = None
+
+        # print("qalt = {}".format(qalt))
 
         pnull = self.pnull(
             qobs=qobs,

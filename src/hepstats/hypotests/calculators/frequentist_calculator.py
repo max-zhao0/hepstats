@@ -5,9 +5,11 @@ from collections.abc import Callable
 import numpy as np
 from scipy.stats import norm
 
-from ...utils import base_sample, base_sampler
+# from ...utils import base_sample, base_sampler
 # from ..parameters import POI, POIarray
 from .basecalculator import ToysCalculator
+base_sample = lambda: None
+base_sampler = lambda: None
 
 
 class FrequentistCalculator(ToysCalculator):

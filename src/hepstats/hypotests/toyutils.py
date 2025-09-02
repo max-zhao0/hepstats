@@ -15,11 +15,13 @@ import asdf
 import numpy as np
 from tqdm.auto import tqdm
 
-from ..utils import base_sample, base_sampler, pll, set_values
+from ..utils import pll
 from .exceptions import FormatError, ParameterNotFound
 from .hypotests_object import ToysObject
 # from .parameters import POI, POIarray
 
+base_sample = lambda: None
+base_sampler = lambda: None
 
 class ToyResult:
     """

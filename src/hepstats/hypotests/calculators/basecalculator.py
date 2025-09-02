@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any, Callable, Iterable
 import numpy as np
 
-from ...utils import base_sample, base_sampler, pll, api, POIarray, POI
+from ...utils import pll, api, POIarray, POI
 from ..hypotests_object import HypotestsObject
 # from ..parameters import POI, POIarray, asarray
 from ..toyutils import ToyResult, ToysManager
@@ -14,10 +14,11 @@ class BaseCalculator(HypotestsObject):
     """Base class for calculator."""
 
     def __init__(self, 
-        loss : api.LossLike, 
+        nll : api.LossLike | api.NegativeLogLikelihoodlike, 
         params : dict[api.ParameterKey, api.ParameterLike], 
         *loss_args,
-        data : api.Data = None,
+        data : dict[api.DataKey, ArrayLike] = None,
+        models : dict[api.DataKey, api.ModelLike] = None,
         minimizer : api.MinimizerLike = None,
         blind : bool = True,
         **kwargs
@@ -41,23 +42,35 @@ class BaseCalculator(HypotestsObject):
             >>>
             >>> calc = BaseCalculator(input=loss, minimizer=Minuit())
         """
-        super().__init__(loss, params, *loss_args, data=None, minimizer=minimizer, **kwargs)
+        super().__init__(nll, params, *loss_args, data=data, models=models, minimizer=minimizer, **kwargs)
         
         self._blind = blind
         self._obs_nll = {}
-
-        # self._parameters = {}
-        # for m in self.model:
-        #     for d in m.get_params():
-        #         self._parameters[d.name] = d
 
     @property
     def blind(self):
         return self._blind
 
-    @blind.setter
-    def blind(self, blind : bool):
-        self._blind = blind
+    def format_datalike_dict(self, datalike, dtype):
+        """Format a dict that should have the same keys as data, i.e. things that correspond to datasets like models"""
+        if self.data is None:
+            return None
+        
+        if isinstance(datalike, dtype):
+            return {dk : datalike for dk in self.data}
+
+        try:
+            datalike = dict(datalike)
+        except TypeError:
+            raise ValueError("{} is not dict or {}".format(datalike, dtype))
+
+        for dk in datalike:
+            if dk not in self.data:
+                raise ValueError("{} key not in data dictionary".format(dk))
+            if not isinstance(datalike[dk], dtype):
+                raise ValueError("{} is not {}".format(datalike[dk], dtype))
+        return datalike
+            
 
     def obs_nll(self, pois: POIarray) -> np.ndarray:
         """Compute observed negative log-likelihood values for given parameters of interest.
@@ -73,18 +86,12 @@ class BaseCalculator(HypotestsObject):
             >>> poi = POI(mean, [1.1, 1.2, 1.0])
             >>> nll = calc.obs_nll(poi)
         """
-    
-        # ret = np.empty(pois.shape)
-        # for i, p in enumerate(pois):
-        #     if p not in self._obs_nll:
-        #         nll = pll(minimizer=self.minimizer, loss=self.loss, pois=p)
-        #         self._obs_nll[p] = nll
-        #     ret[i] = self._obs_nll[p]
-        # return ret
 
         ret = np.empty(pois.shape)
         for i, p in enumerate(pois):
-            ret[i] = pll(p, self.minimizer, self.loss, self.parameters, *self.loss_args, data=self.data)
+            if p not in self._obs_nll:
+                self._obs_nll[p] = pll(p, self.minimizer, self.loss, self.parameters, *self.loss_args).fmin
+            ret[i] = self._obs_nll[p]
         return ret
 
     def qobs(
@@ -114,20 +121,9 @@ class BaseCalculator(HypotestsObject):
         """
 
         self.check_pois(poinull)
-        assert isinstance(poinull, POI)
-
-        # if poinull.ndim == 1:
-        #     poi_spec = poinull.param_spec
-        #     bestfitpoi_val = self.bestfit.spec_value_map[poi_spec]
-
-        #     if qtilde and bestfit < 0:
-        #         bestfitpoi = POI(poi_spec, 0)
-        #     else:
-        #         bestfitpoi = POI(poi_spec, bestfitpoi_val)
-        #         self._obs_nll[bestfitpoi] = self.bestfit.fmin
 
         bestfitpoi_val = self.bestfit.params[poinull.param_key]
-        assert np.shape(bestfitpoi_val) == tuple(), "qobs cannot be calculated with array valued POI"
+        assert np.ndim(bestfitpoi_val) == 0, "qobs cannot be calculated with array valued POI"
         
         if qtilde:
             bestfitpoi_val = max(bestfitpoi_val, 0)
@@ -136,8 +132,8 @@ class BaseCalculator(HypotestsObject):
         nll_bestfitpoi_obs = self.obs_nll(bestfitpoi)
         nll_poinull_obs = self.obs_nll(poinull)
 
-        print("nll_poinull_obs={}, nll_bestfitpoi_obs={}".format(nll_poinull_obs, nll_bestfitpoi_obs))
-        print("poinull={}, bestfitpoi={}".format(poinull, bestfitpoi))
+        # print("nll_poinull_obs={}, nll_bestfitpoi_obs={}".format(nll_poinull_obs, nll_bestfitpoi_obs))
+        # print("poinull={}, bestfitpoi={}".format(poinull, bestfitpoi))
         
         return self.q(
             nll1=nll_poinull_obs,
@@ -264,13 +260,6 @@ class BaseCalculator(HypotestsObject):
             TypeError: if pois is not an instance of :class:`hepstats.parameters.POIarray`.
         """
 
-        # msg = "POI/POIarray is required."
-        # if not isinstance(pois, POIarray):
-        #     raise TypeError(msg)
-        # if pois.ndim > 1:
-        #     msg = "Tests with more that one parameter of interest are not yet implemented."
-        #     raise NotImplementedError(msg)
-
         if not isinstance(pois, POIarray):
             raise ValueError("Not POI or POIarray")
 
@@ -278,8 +267,6 @@ class BaseCalculator(HypotestsObject):
             raise ValueError("{} is not in calculator's parameters".format(pois.param_key))
         reference_param = self.parameters[pois.param_key]
 
-        # if not isinstance(reference_param, api.ParameterLike):
-        #     raise ValueError("{} needs to point to a Parameter".format(param_key))
         if not reference_param.floating:
             raise ValueError("POI must point to a floating parameter")
         if np.shape(reference_param.value) != np.shape(pois.values)[1:]:
@@ -299,14 +286,10 @@ class BaseCalculator(HypotestsObject):
                names.
         """
 
-        # if poi1.ndim != poi2.ndim:
-        #     msg = f"POIs should have the same dimensions, poi1={poi1.ndim}, poi2={poi2.ndim}"
-        #     raise ValueError(msg)
-
-        # if poi1.ndim == 1 and poi1.name != poi2.name:
-        #     msg = "The variables used in the parameters of interest should have the same names,"
-        #     msg += f" poi1={poi1.name}, poi2={poi2.name}"
-        #     raise ValueError(msg)
+        if poi1.param_key != poi2.param_key:
+            msg = "The variables used in the parameters of interest should have the same names,"
+            msg += f" poi1={poi1.param_key}, poi2={poi2.param_key}"
+            raise ValueError(msg)
 
     def q(
         self,
@@ -354,6 +337,8 @@ class BaseCalculator(HypotestsObject):
 
         return np.where(condition, zeros, q)
 
+base_sample = lambda: None
+base_sampler = lambda: None
 
 class BaseToysCalculator(BaseCalculator):
     def __init__(self, input, minimizer, **kwargs):

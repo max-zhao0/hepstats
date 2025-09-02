@@ -58,7 +58,7 @@ class POIarray:
         return self._values
 
     def __repr__(self):
-        return f"POIarray('{self.param_key.__repr__()}', values={self.values})"
+        return f"POIarray('{self.param_key}', values={self.values})"
 
     def __getitem__(self, i):
         """
@@ -111,17 +111,6 @@ class POIarray:
         Args:
             values: values to append
         """
-        # if not isinstance(values, Collection):
-        #     values = [values]
-        # values = np.concatenate([self.values, values])
-        # return POIarray(param_spec=self.param_path, values=values)
-        
-        # if not isinstance(values, Collection):
-        #     values = [values]
-        # if not isinstance(values, Collection) or (self._array_valued and not isinstance(values[0], Collection)):
-        #     values = [values]
-        # self._values.extend(values)
-
         values = np.array(values)
         if values.ndim == self.ndim - 1:
             values = np.expand_dims(values, axis=0)
@@ -149,10 +138,6 @@ class POI(POIarray):
             >>> Nsig = zfit.Parameter("Nsig")
             >>> poi = POI(Nsig, value=0)
         """
-        # if isinstance(value, Collection):
-        #     msg = "A single value for the POI is required."
-        #     raise TypeError(msg)
-
         super().__init__(key=key, values=[value])
         self._value = value
 
@@ -169,19 +154,19 @@ class POI(POIarray):
     def append(self, values: np.ndarray | Collection[np.ndarray]):
         raise TypeError("POI cannot append additional values. Please use POIarray.")
 
-    # def __eq__(self, other):
-    #     if not isinstance(other, POI):
-    #         return NotImplemented
+    def __eq__(self, other):
+        if not isinstance(other, POI):
+            return NotImplementedError
 
-    #     value_equal = self.value == other.value
-    #     # name_equal = self.name == other.name
-    #     return value_equal # and name_equal
+        value_equal = self.value == other.value
+        name_equal = self.param_key == other.param_key
+        return value_equal and name_equal
 
     def __repr__(self):
-        return f"POI('{self.param_key.__repr__()}', value={self.value})"
+        return f"POI('{self.param_key}', value={self.value})"
 
-    # def __hash__(self):
-    #     return hash((self.name, self.value))
+    def __hash__(self):
+        return hash((self.param_key, self.value))
 
 
 def asarray(poi: POI) -> POIarray:
