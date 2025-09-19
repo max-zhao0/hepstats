@@ -109,13 +109,14 @@ class AsymptoticCalculator(BaseCalculator):
         UNBINNED_TO_BINNED_LOSS[ExtendedUnbinnedNLL] = ExtendedBinnedNLL
 
     def __init__(self,
-        nll : api.LossLike | api.NegativeLogLikelihoodlike, 
-        params : dict[api.ParameterKey, api.ParameterLike], 
+        data_nll : dict[api.DataKey, api.NegativeLogLikelihoodlike | api.ExtendedUnbinnedNLLLike],
+        constraint_nll : api.LossLike,
+        params : dict[api.ParameterKey, api.ParameterLike],
+        data : dict[api.DataKey, ArrayLike],
         *loss_args,
-        data : dict[api.DataKey, ArrayLike] = None, # CAN BE NONE
-        models : dict[api.DataKey, api.ModelLike] = None, # CAN BE NONE
+        models : dict[api.DataKey, api.ModelLike] = None,
         minimizer : api.MinimizerLike = None, 
-        extended_unbinned_yield_correction : bool | dict[api.DataKey, bool] = True, # CANNOT BE NONE
+        unbinned_correction : bool | dict[api.DataKey, bool] = True, # CANNOT BE NONE
         beta : int | dict[api.DataKey, int] = 100, # CANNOT BE NONE
         blind : bool = True,
         **kwargs
@@ -146,9 +147,9 @@ class AsymptoticCalculator(BaseCalculator):
             >>> calc = AsymptoticCalculator(input=loss, minimizer=Minuit(), asimov_bins=100)
         """
 
-        super().__init__(nll, params, *loss_args, data=data, models=models, minimizer=minimizer, blind=blind, **kwargs)
+        super().__init__(data_nll, constraint_nll, params, *loss_args, data=data, models=models, minimizer=minimizer, blind=blind, **kwargs)
 
-        self._unbinned_corr = self.format_datalike_dict(extended_unbinned_yield_correction, bool)
+        self._unbinned_corr = self.format_datalike_dict(unbinned_correction, bool)
         self._beta = self.format_datalike_dict(beta, int)
 
         self._asimov_dataset: dict = {}
@@ -159,11 +160,11 @@ class AsymptoticCalculator(BaseCalculator):
         self._asimov_nll: dict[POI, np.ndarray] = {}
 
     @property
-    def extended_unbinned_yield_correction(self):
+    def unbinned_correction(self):
         return self._unbinned_corr
 
-    @extended_unbinned_yield_correction.setter
-    def extended_unbinned_yield_correction(self, value : bool | dict[api.DataKey, bool]):
+    @unbinned_correction.setter
+    def unbinned_correction(self, value : bool | dict[api.DataKey, bool]):
         self._asimov_dataset: dict = {}
         self._asimov_norms : dict = {}
         self._asimov_loss: dict = {}
@@ -198,18 +199,18 @@ class AsymptoticCalculator(BaseCalculator):
                 beta = self.beta[data_key]
 
                 if isinstance(model, api.BinnedModelLike):
-                    raise NotImplementedError
+                    # All bins to expected values
+                    asimov_dataset[data_key] = model.expected_histogram(asimov_param_values)
+                    
                 elif isinstance(model, api.UnbinnedModelLike):
+                    # Oversample by beta to suppress statistical fluctuation
                     norm = model.get_yield(asimov_param_values) if isinstance(model, api.ExtendedUnbinnedModelLike) else model.N
-
-                    if not self.blind:
-                        nsamples = int(beta * max(norm, len(self.data[data_key])))
-                    else:
-                        nsamples = int(beta * norm)
+                    nsamples = int(beta * norm if self.blind else beta * max(norm, len(self.data[data_key])))
 
                     # Remember the normalization under Asimov parameters, to be used to correct the Asimov loss if necessary
                     asimov_norm[data_key] = norm
                     asimov_dataset[data_key] = sample(model, asimov_param_values, nsamples=nsamples, minimizer=self.minimizer)
+                    
                 else:
                     raise NotImplementedError
 
@@ -226,8 +227,8 @@ class AsymptoticCalculator(BaseCalculator):
             asimov_param_values = pll(poi, self.minimizer, self.loss, self.parameters).params
 
         asimov_fitted_param_values = pll([], self.minimizer, self.asimov_loss(poi), self.parameters).params
-        print("asimov_param_values = {}".format(asimov_param_values))
-        print("asimov_fitted_param_values = {}".format(asimov_fitted_param_values))
+
+        return asimov_param_values, asimov_fitted_param_values
 
     def asimov_norm(self, poi: POI):
         if poi not in self._asimov_norms:
@@ -254,21 +255,13 @@ class AsymptoticCalculator(BaseCalculator):
             asimov_dataset = self.asimov_dataset(poi)
             asimov_norm = self.asimov_norm(poi)
 
-            unbinned_corrections = []
+            loss_weights = {}
             for data_key in asimov_dataset:
-                model = self.models[data_key]
-                
-                if isinstance(model, api.UnbinnedModelLike):
-                    # Downweight oversampling
-                    asimov_size = len(asimov_dataset[data_key])
-                    corr = lambda params: (1 - asimov_norm[data_key] / asimov_size) * np.sum(np.log(model.pdf(asimov_dataset[data_key], params)))
-                    unbinned_corrections.append(corr)
-                
-                    if isinstance(model, api.ExtendedUnbinnedModelLike) and self._unbinned_corr[data_key]:
-                        # Correct yield factor in unbinned asimov
-                        unbinned_corrections.append(lambda params: (asimov_size - asimov_norm[data_key]) * np.log(model.get_yield(params)))
+                if isinstance(self.models[data_key], api.UnbinnedModelLike):
+                    assert data_key in asimov_norm
+                    loss_weights[data_key] = asimov_norm[data_key] / len(asimov_dataset[data_key])
             
-            loss = self.lossbuilder(self.nll, asimov_dataset, unbinned_corrections)
+            loss = self.build_loss(self.data_nll, self.constraint_nll, asimov_dataset, loss_weights)
             self._asimov_loss[poi] = loss
 
         return self._asimov_loss[poi]

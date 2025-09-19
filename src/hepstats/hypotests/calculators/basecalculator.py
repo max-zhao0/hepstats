@@ -14,10 +14,11 @@ class BaseCalculator(HypotestsObject):
     """Base class for calculator."""
 
     def __init__(self, 
-        nll : api.LossLike | api.NegativeLogLikelihoodlike, 
-        params : dict[api.ParameterKey, api.ParameterLike], 
+        data_nll : dict[api.DataKey, api.NegativeLogLikelihoodlike | api.ExtendedUnbinnedNLLLike],
+        constraint_nll : api.LossLike,
+        params : dict[api.ParameterKey, api.ParameterLike],
+        data : dict[api.DataKey, ArrayLike],
         *loss_args,
-        data : dict[api.DataKey, ArrayLike] = None,
         models : dict[api.DataKey, api.ModelLike] = None,
         minimizer : api.MinimizerLike = None,
         blind : bool = True,
@@ -42,7 +43,14 @@ class BaseCalculator(HypotestsObject):
             >>>
             >>> calc = BaseCalculator(input=loss, minimizer=Minuit())
         """
-        super().__init__(nll, params, *loss_args, data=data, models=models, minimizer=minimizer, **kwargs)
+        super().__init__(data_nll, constraint_nll, params, *loss_args, data=data, models=models, minimizer=minimizer, **kwargs)
+
+        if self.models is not None:
+            for data_key in self.models:
+                if (isinstance(self.models[data_key], api.ExtendedUnbinnedModelLike) 
+                    and not isinstance(self.data_nll[data_key], api.ExtendedUnbinnedNLLLike)
+                ):
+                    raise ValueError("AsymptoticCalculator requires extended unbinned models to correspond to extended unbinned nlls")
         
         self._blind = blind
         self._obs_nll = {}
@@ -52,10 +60,7 @@ class BaseCalculator(HypotestsObject):
         return self._blind
 
     def format_datalike_dict(self, datalike, dtype):
-        """Format a dict that should have the same keys as data, i.e. things that correspond to datasets like models"""
-        if self.data is None:
-            return None
-        
+        """Format a dict that should have the same keys as data, i.e. things that correspond to datasets like models"""        
         if isinstance(datalike, dtype):
             return {dk : datalike for dk in self.data}
 

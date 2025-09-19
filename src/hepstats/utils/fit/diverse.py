@@ -16,25 +16,28 @@ def get_ndims(dataset):
     return len(dataset.obs)
 
 def sample(model : api.UnbinnedModelLike, params : dict[api.ParameterKey, float | ArrayLike], nsamples : int, minimizer : api.MinimizerLike):
-    if np.ndim(model.lower) == 0: # Univariate sampling
-        call_pdf = lambda x: model.pdf(x, params)
-
-        # Find maximum the pdf reaches over the domain
-        TempParam = namedtuple("TempParam", ["value", "upper", "lower", "floating"])
-        xparam = TempParam(np.mean([model.lower, model.upper]), model.upper, model.lower, True)
-        minimum = minimizer.minimize(lambda x: -call_pdf(x), {"x" : xparam})
-        max_height = - minimum.fmin
-
-        # Number of throws such that the expected number of passing samples is nsamples. Note that this is probablilistic
-        nthrows = int((model.upper - model.lower) * nsamples * max_height)
-
-        x = np.random.uniform(model.lower, model.upper, size=nthrows)
-        y = np.random.uniform(0, max_height, size=nthrows)
-        res = x[call_pdf(x) > y]
-        
-        return res
-    else:
+    if not model.pdf_vectorized:
         raise NotImplementedError
+
+    if np.ndim(model.lower) > 0:
+        raise NotImplementedError
+    
+    call_pdf = lambda x: model.pdf(x, params)
+
+    # Find maximum the pdf reaches over the domain
+    TempParam = namedtuple("TempParam", ["value", "upper", "lower", "floating"])
+    xparam = TempParam(np.mean([model.lower, model.upper]), model.upper, model.lower, True)
+    minimum = minimizer.minimize(lambda x: -call_pdf(x), {"x" : xparam})
+    max_height = - minimum.fmin
+
+    # Number of throws such that the expected number of passing samples is nsamples. Note that this is probablilistic
+    nthrows = int((model.upper - model.lower) * nsamples * max_height)
+
+    x = np.random.uniform(model.lower, model.upper, size=nthrows)
+    y = np.random.uniform(0, max_height, size=nthrows)
+    res = x[call_pdf(x) > y]
+    
+    return res
 
 def pll(pois : POI | Collection[POI],
     minimizer : api.MinimizerLike, 

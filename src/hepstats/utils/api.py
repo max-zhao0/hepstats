@@ -42,11 +42,16 @@ class ParameterLike(Protocol):
 class LossLike(Protocol):
     def __call__(self, params : dict[ParameterKey, float | ArrayLike], *loss_args) -> float:
         raise NotImplementedError
-
+        
 @runtime_checkable
 class NegativeLogLikelihoodLike(Protocol):
     def __call__(self, params : dict[ParameterKey, float | ArrayLike], *nll_args, data : dict[DataKey, ArrayLike]) -> float:
         raise NotImplementedError
+
+@runtime_checkable
+class ExtendedUnbinnedNLLLike(Protocol):
+    yield_term : LossLike
+    pdf_term : NegativeLogLikelihoodLike
 
 @runtime_checkable
 class BinnedModelLike(Protocol):
@@ -59,6 +64,8 @@ class BinnedModelLike(Protocol):
 class UnbinnedModelLike(Protocol):
     lower : float | ArrayLike
     upper : float | ArrayLike
+
+    pdf_vectorized : bool = False
     
     def pdf(self, 
         x : float | ArrayLike, 
