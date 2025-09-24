@@ -16,28 +16,33 @@ def get_ndims(dataset):
     return len(dataset.obs)
 
 def sample(model : api.UnbinnedModelLike, params : dict[api.ParameterKey, float | ArrayLike], nsamples : int, minimizer : api.MinimizerLike):
-    if not model.pdf_vectorized:
-        raise NotImplementedError
-
-    if np.ndim(model.lower) > 0:
-        raise NotImplementedError
-    
     call_pdf = lambda x: model.pdf(x, params)
+    if not model.pdf_vectorized:
+        call_pdf = np.vectorize(call_pdf)
+
+    lower = np.atleast_1d(model.lower)
+    upper = np.atleast_1d(model.upper)
 
     # Find maximum the pdf reaches over the domain
     TempParam = namedtuple("TempParam", ["value", "upper", "lower", "floating"])
-    xparam = TempParam(np.mean([model.lower, model.upper]), model.upper, model.lower, True)
+    xparam = TempParam(np.mean([lower, upper], axis=0), upper, lower, True)
     minimum = minimizer.minimize(lambda x: -call_pdf(x), {"x" : xparam})
     max_height = - minimum.fmin
 
-    # Number of throws such that the expected number of passing samples is nsamples. Note that this is probablilistic
-    nthrows = int((model.upper - model.lower) * nsamples * max_height)
-
-    x = np.random.uniform(model.lower, model.upper, size=nthrows)
-    y = np.random.uniform(0, max_height, size=nthrows)
-    res = x[call_pdf(x) > y]
+    # Number of throws such that the expected number of passing samples is nsamples.
+    def run_mc(nthrows):
+        nthrows = int(nthrows)
+        x = np.random.uniform(lower, upper, size=(nthrows, len(lower)))
+        y = np.random.uniform(0, max_height, size=nthrows)
+        return x[call_pdf(x) > y]
     
-    return res
+    expected_nthrows = np.prod(upper - lower) * nsamples * max_height
+    res = run_mc(expected_nthrows * 1.2)
+    while len(res) < nsamples:
+        res = np.concatenate([res, run_mc(expected_nthrows * 0.2)], axis=0)
+    res = res[:nsamples]
+    
+    return res if np.ndim(model.lower) > 0 else res[:,0]
 
 def pll(pois : POI | Collection[POI],
     minimizer : api.MinimizerLike, 
