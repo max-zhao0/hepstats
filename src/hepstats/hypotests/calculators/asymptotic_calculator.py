@@ -109,15 +109,15 @@ class AsymptoticCalculator(BaseCalculator):
         UNBINNED_TO_BINNED_LOSS[ExtendedUnbinnedNLL] = ExtendedBinnedNLL
 
     def __init__(self,
-        data_nll : dict[api.DataKey, api.NegativeLogLikelihoodlike | api.ExtendedUnbinnedNLLLike],
+        data_nll : api.DataNLLCollection,
         constraint_nll : api.LossLike,
-        params : dict[api.ParameterKey, api.ParameterLike],
-        data : dict[api.DataKey, ArrayLike],
+        params : api.ParameterCollection,
+        data : api.DataCollection,
         *loss_args,
-        models : dict[api.DataKey, api.ModelLike] = None,
+        models : api.ModelCollection = None,
         minimizer : api.MinimizerLike = None, 
-        unbinned_correction : bool | dict[api.DataKey, bool] = True, # CANNOT BE NONE
-        beta : int | dict[api.DataKey, int] = 100, # CANNOT BE NONE
+        unbinned_correction : bool | dict[api.RegionKey, bool] = True, # CANNOT BE NONE
+        beta : int | dict[api.RegionKey, int] = 100, # CANNOT BE NONE
         blind : bool = True,
         **kwargs
     ):
@@ -149,8 +149,8 @@ class AsymptoticCalculator(BaseCalculator):
 
         super().__init__(data_nll, constraint_nll, params, *loss_args, data=data, models=models, minimizer=minimizer, blind=blind, **kwargs)
 
-        self._unbinned_corr = self.format_datalike_dict(unbinned_correction, bool)
-        self._beta = self.format_datalike_dict(beta, int)
+        self._unbinned_corr = self.format_region_dict(unbinned_correction, bool)
+        self._beta = self.format_region_dict(beta, int)
 
         self._asimov_dataset: dict = {}
         self._asimov_norms : dict = {}
@@ -164,22 +164,22 @@ class AsymptoticCalculator(BaseCalculator):
         return self._unbinned_corr
 
     @unbinned_correction.setter
-    def unbinned_correction(self, value : bool | dict[api.DataKey, bool]):
+    def unbinned_correction(self, value : bool | dict[api.RegionKey, bool]):
         self._asimov_dataset: dict = {}
         self._asimov_norms : dict = {}
         self._asimov_loss: dict = {}
-        self._unbinned_corr = self.format_datalike_dict(value, bool)
+        self._unbinned_corr = self.format_region_dict(value, bool)
 
     @property
     def beta(self):
         return self._beta
 
     @beta.setter
-    def beta(self, value : int | dict[api.DataKey, int]):
+    def beta(self, value : int | dict[api.RegionKey, int]):
         self._asimov_dataset: dict = {}
         self._asimov_norms : dict = {}
         self._asimov_loss: dict = {}
-        self._beta = self.format_datalike_dict(value, int)
+        self._beta = self.format_region_dict(value, int)
 
     def asimov_dataset(self, poi: POI, ntrials_fit: int = 5):
         if poi not in self._asimov_dataset:

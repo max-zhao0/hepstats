@@ -25,7 +25,7 @@ def sample(model : api.UnbinnedModelLike, params : dict[api.ParameterKey, float 
 
     # Find maximum the pdf reaches over the domain
     TempParam = namedtuple("TempParam", ["value", "upper", "lower", "floating"])
-    xparam = TempParam(np.mean([lower, upper], axis=0), upper, lower, True)
+    xparam = TempParam(lower + 0.1 * upper, upper, lower, True)
     minimum = minimizer.minimize(lambda x: -call_pdf(x), {"x" : xparam})
     max_height = - minimum.fmin
 

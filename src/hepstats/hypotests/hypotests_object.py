@@ -16,12 +16,12 @@ class HypotestsObject:
     """
 
     def __init__(self, 
-        data_nll : dict[api.DataKey, api.NegativeLogLikelihoodlike | api.ExtendedUnbinnedNLLLike],
+        data_nll : api.DataNLLCollection,
         constraint_nll : api.LossLike,
-        params : dict[api.ParameterKey, api.ParameterLike], 
-        data : dict[api.DataKey, ArrayLike],
+        params : api.ParameterCollection, 
+        data : api.DataCollection,
         *loss_args,
-        models : dict[api.DataKey, api.ModelLike] = None,
+        models : api.ModelCollection = None,
         minimizer : api.MinimizerLike = None, 
         **kwargs
     ):
@@ -83,7 +83,7 @@ class HypotestsObject:
             raise ValueError("{} is not dictlike".format(obj)) 
 
     @property
-    def data_nll(self) -> dict[api.DataKey, api.NegativeLogLikelihoodLike]:
+    def data_nll(self) -> api.DataNLLCollection:
         return self._data_nll
 
     @property
@@ -170,9 +170,9 @@ class HypotestsObject:
         return self._parameters
 
     def build_loss(self,
-        data_nll : dict[api.DataKey, api.NegativeLogLikelihoodLike],
+        data_nll : api.DataNLLCollection,
         constraint_nll : api.LossLike,
-        data : dict[api.DataKey, ArrayLike],
+        data : api.DataCollection,
         weights = None
     ) -> api.LossLike:
         if weights is None:

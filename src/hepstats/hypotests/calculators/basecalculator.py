@@ -14,12 +14,12 @@ class BaseCalculator(HypotestsObject):
     """Base class for calculator."""
 
     def __init__(self, 
-        data_nll : dict[api.DataKey, api.NegativeLogLikelihoodlike | api.ExtendedUnbinnedNLLLike],
+        data_nll : api.DataNLLCollection,
         constraint_nll : api.LossLike,
-        params : dict[api.ParameterKey, api.ParameterLike],
-        data : dict[api.DataKey, ArrayLike],
+        params : api.ParameterCollection,
+        data : api.DataCollection,
         *loss_args,
-        models : dict[api.DataKey, api.ModelLike] = None,
+        models : api.ModelCollection = None,
         minimizer : api.MinimizerLike = None,
         blind : bool = True,
         **kwargs
@@ -59,7 +59,7 @@ class BaseCalculator(HypotestsObject):
     def blind(self):
         return self._blind
 
-    def format_datalike_dict(self, datalike, dtype):
+    def format_region_dict(self, datalike, dtype):
         """Format a dict that should have the same keys as data, i.e. things that correspond to datasets like models"""        
         if isinstance(datalike, dtype):
             return {dk : datalike for dk in self.data}

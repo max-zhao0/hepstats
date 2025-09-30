@@ -23,13 +23,17 @@ The `zfit` API is currently the standard fitting API in hepstats.
 
 # import uhi.typing.plottable
 
-from typing import runtime_checkable, Protocol, TypeVar, Callable, Union, NamedTuple, Hashable
+from typing import runtime_checkable, Protocol, TypeVar, Callable, Union, NamedTuple, Hashable, TypeAlias
+
 from numpy.typing import ArrayLike
 import numpy as np
 import warnings
 
 ParameterKey = TypeVar("ParameterKey", bound=Hashable)
-DataKey = TypeVar("DataKey", bound=Hashable)
+RegionKey = TypeVar("RegionKey", bound=Hashable)
+
+ParameterCollection : TypeAlias = dict[ParameterKey, float | ArrayLike]
+DataCollection : TypeAlias = dict[RegionKey, ArrayLike]
 
 @runtime_checkable
 class ParameterLike(Protocol):
@@ -40,23 +44,26 @@ class ParameterLike(Protocol):
 
 @runtime_checkable
 class LossLike(Protocol):
-    def __call__(self, params : dict[ParameterKey, float | ArrayLike], *loss_args) -> float:
+    def __call__(self, params : ParameterCollection, *loss_args) -> float:
         raise NotImplementedError
         
 @runtime_checkable
 class NegativeLogLikelihoodLike(Protocol):
-    def __call__(self, params : dict[ParameterKey, float | ArrayLike], *nll_args, data : dict[DataKey, ArrayLike]) -> float:
+    def __call__(self, params : ParameterCollection, *nll_args, data : DataCollection) -> float:
         raise NotImplementedError
 
 @runtime_checkable
 class ExtendedUnbinnedNLLLike(Protocol):
-    yield_term : LossLike
-    pdf_term : NegativeLogLikelihoodLike
+    def yield_term(self, params : ParameterCollection) -> float:
+        raise NotImplementedError
+        
+    def pdf_term(self, params : ParameterCollection, *nll_args, data : DataCollection) -> float:
+        raise NotImplementedError
 
 @runtime_checkable
 class BinnedModelLike(Protocol):
     def expected_histogram(self, 
-        params : dict[ParameterKey, float | ArrayLike]
+        params : ParameterCollection
     ) -> ArrayLike:
         raise NotImplementedError
 
@@ -69,20 +76,21 @@ class UnbinnedModelLike(Protocol):
     
     def pdf(self, 
         x : float | ArrayLike, 
-        params : dict[ParameterKey, float | ArrayLike]
+        params : ParameterCollection
     ) -> float:
         raise NotImplementedError
 
 @runtime_checkable
 class ExtendedUnbinnedModelLike(UnbinnedModelLike, Protocol):
-    def get_yield(self, params : dict[ParameterKey, float | ArrayLike]) -> float:
+    def get_yield(self, params : ParameterCollection) -> float:
         raise NotImplementedError
 
 @runtime_checkable
 class UnextendedUnbinnedModelLike(UnbinnedModelLike, Protocol):
     N : int
 
-ModelLike = TypeVar("ModelLike", bound=BinnedModelLike | UnbinnedModelLike)
+ModelCollection : TypeAlias = dict[RegionKey, BinnedModelLike | UnbinnedModelLike]
+DataNLLCollection : TypeAlias = dict[RegionKey, NegativeLogLikelihoodLike | ExtendedUnbinnedNLLLike]
         
 @runtime_checkable
 class MinimumLike(Protocol):
@@ -92,7 +100,7 @@ class MinimumLike(Protocol):
 
 @runtime_checkable
 class MinimizerLike(Protocol):
-    def minimize(self, loss : LossLike, params : dict[ParameterKey, ParameterLike], *loss_args) -> MinimumLike:
+    def minimize(self, loss : LossLike, params : ParameterCollection, *loss_args) -> MinimumLike:
         raise NotImplementedError
 
 class InternalParameter:
