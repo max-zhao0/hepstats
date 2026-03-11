@@ -55,7 +55,7 @@ def upperlimit(
         
     _api_check(calculator, poinull, poialt)
 
-    def pvalues(self, CLs: int = True) -> dict[str, np.ndarray]:
+    def pvalues(CLs: int = True) -> dict[str, np.ndarray]:
         """
         Returns p-values scanned for the values of the parameters of interest
         in the null hypothesis.
@@ -133,3 +133,68 @@ def upperlimit(
             limits[k] = None
 
     return limits, all_pvalues
+
+def confidence_interval(
+    calculator : BaseCalculator,
+    poi_key : api.ParameterKey,
+    poi_range : tuple = None,
+    alpha : float = 0.32,
+    qtilde : bool = False,
+    ntests : int = 20
+) -> dict[str, float]:
+    if poi_range is not None and not len(poi_range) == 2:
+        raise ValueError("POI range must be tuple of two values")
+
+    reference_param = calculator.parameters[poi_key]
+    if np.shape(reference_param.value) != tuple():
+        raise NotImplementedError("Confidence interval test only supported for scalar valued parameters")
+    if poi_range is None:
+        poi_range = (reference_param.lower, reference_param.upper)
+        
+    poinull = POIarray(poi_key, np.linspace(*poi_range, ntests))
+    _api_check(calculator, poinull)
+    
+    bands = {}
+    observed = calculator.bestfit.params[poinull.param_key]
+    bands["observed"] = observed
+
+    pvalues = calculator.pvalue(poinull=poinull, poialt=None, qtilde=qtilde, onesided=False)[0]
+
+    if min(pvalues) > alpha:
+        msg = f"The minimum of the scanned p-values is {min(pvalues)} which is larger than the"
+        msg += f" confidence level alpha = {alpha}. Try to increase the range of POI values."
+        raise ValueError(msg)
+
+    tck = interpolate.splrep(poinull.values, pvalues - alpha, s=0)
+    roots = np.array(interpolate.sproot(tck))
+
+    msg = f" bound on the POI `{poinull.param_key}` cannot not be interpolated."
+
+    if roots.size > 2:
+        msg_warn = "Multiple roots have been founds."
+        # if isinstance(calculator, FrequentistCalculator):
+        #     msg_warn += " Try to increase the number of toys, 'ntoysnull', to reduce fluctuations."
+        warnings.warn(msg_warn, stacklevel=2)
+
+    lower_roots = roots[roots < observed]
+    upper_roots = roots[roots > observed]
+
+    if upper_roots.size == 0:
+        msg = "Upper" + msg + " Try to increase the maximum POI value."
+        raise ValueError(msg)
+    bands["upper"] = max(upper_roots)
+
+    if lower_roots.size == 0:
+        if qtilde:
+            bands["lower"] = 0.0
+        else:
+            msg = "Low" + msg + " Try to decrease the minimum POI value."
+            raise ValueError(msg)
+    else:
+        bands["lower"] = min(lower_roots)
+
+        if qtilde and bands["lower"] < 0.0:
+            bands["lower"] = 0.0
+
+    return bands, pvalues
+    

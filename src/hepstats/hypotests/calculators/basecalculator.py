@@ -6,7 +6,6 @@ import numpy as np
 
 from ...utils import pll, api, POIarray, POI
 from ..hypotests_object import HypotestsObject
-# from ..parameters import POI, POIarray, asarray
 from ..toyutils import ToyResult, ToysManager
 
 
@@ -19,8 +18,8 @@ class BaseCalculator(HypotestsObject):
         params : api.ParameterCollection,
         data : api.DataCollection,
         *loss_args,
-        models : api.ModelCollection = None,
-        minimizer : api.MinimizerLike = None,
+        models : api.ModelCollection | None = None,
+        minimizer : api.MinimizerLike | None = None,
         blind : bool = True,
         **kwargs
     ):
@@ -43,7 +42,7 @@ class BaseCalculator(HypotestsObject):
             >>>
             >>> calc = BaseCalculator(input=loss, minimizer=Minuit())
         """
-        super().__init__(data_nll, constraint_nll, params, *loss_args, data=data, models=models, minimizer=minimizer, **kwargs)
+        super().__init__(data_nll, constraint_nll, params, data, *loss_args, models=models, minimizer=minimizer, **kwargs)
 
         if self.models is not None:
             for data_key in self.models:
@@ -345,33 +344,23 @@ class BaseCalculator(HypotestsObject):
 base_sample = lambda: None
 base_sampler = lambda: None
 
-class BaseToysCalculator(BaseCalculator):
-    def __init__(self, input, minimizer, **kwargs):
-        """Basis for toys calculator class.
-
-        Args:
-            input: loss or fit result.
-            minimizer: minimizer to use to find the minimum of the loss function.
-            sampler: function used to create sampler with models, number of events and floating
-               parameters in the sample.
-            sample: function used to get samples from the sampler.
-        """
-        super().__init__(input, minimizer, **kwargs)
-
-
-class ToysCalculator(BaseToysCalculator, ToysManager):
+class ToysCalculator(BaseCalculator):
     """
     Class for calculators using toys.
     """
 
-    def __init__(
-        self,
-        input,
-        minimizer,
+    def __init__(self,
+        data_nll : api.DataNLLCollection,
+        constraint_nll : api.LossLike,
+        params : api.ParameterCollection,
+        data : api.DataCollection,
+        *loss_args,
+        models : api.ModelCollection | None = None,
+        minimizer : api.MinimizerLike | None = None,
+        blind : bool = True,
         ntoysnull: int = 100,
         ntoysalt: int = 100,
-        sampler: Callable = base_sampler,
-        sample: Callable = base_sample,
+        **kwargs
     ):
         """Toys calculator class.
 
@@ -385,20 +374,26 @@ class ToysCalculator(BaseToysCalculator, ToysManager):
             sample: function used to get samples from the sampler. Default is
                 :func:`hepstats.utils.fit..sampling.base_sample`.
         """
-        super().__init__(input, minimizer, sampler=sampler, sample=sample)
+        super().__init__(
+            data_nll,
+            constraint_nll,
+            params,
+            data,
+            *loss_args,
+            models=models,
+            minimizer=minimizer,
+            blind=blind,
+            **kwargs
+        )
 
         self._ntoysnull = ntoysnull
         self._ntoysalt = ntoysalt
 
-    @classmethod
-    def from_yaml(
-        cls,
-        filename: str,
-        input,
-        minimizer,
-        sampler: Callable = base_sampler,
-        sample: Callable = base_sample,
-        **kwargs: Any,
+        self._toys_manager = ToysManager(minimizer)
+
+    def toys_from_yaml(
+        self,
+        filename: str
     ):
         """
         ToysCalculator constructor with the toys loaded from a yaml file.
@@ -412,24 +407,10 @@ class ToysCalculator(BaseToysCalculator, ToysManager):
             sample: function used to get samples from the sampler. Default is
                :func:`hepstats.fitutils.sampling.base_sample`.
         """
-
-        ntoysnull = kwargs.get("ntoysnull", 100)
-        ntoysalt = kwargs.get("ntoysall", 100)
-
-        calculator = cls(
-            input=input,
-            minimizer=minimizer,
-            ntoysnull=ntoysnull,
-            ntoysalt=ntoysalt,
-            sampler=sampler,
-            sample=sample,
-        )
-        toysresults = calculator.toysresults_from_yaml(filename)
+        toysresults = self._toys_manager.toysresults_from_yaml(filename)
 
         for t in toysresults:
-            calculator.add_toyresult(t)
-
-        return calculator
+            self.add_toyresult(t)
 
     @property
     def ntoysnull(self) -> int:

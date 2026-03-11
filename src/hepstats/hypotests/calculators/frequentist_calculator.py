@@ -8,6 +8,8 @@ from scipy.stats import norm
 # from ...utils import base_sample, base_sampler
 # from ..parameters import POI, POIarray
 from .basecalculator import ToysCalculator
+from ...utils import pll, api, sample
+
 base_sample = lambda: None
 base_sampler = lambda: None
 
@@ -15,14 +17,18 @@ base_sampler = lambda: None
 class FrequentistCalculator(ToysCalculator):
     """Frequentist calculator class."""
 
-    def __init__(
-        self,
-        input,
-        minimizer,
+    def __init__(self,
+        data_nll : api.DataNLLCollection,
+        constraint_nll : api.LossLike,
+        params : api.ParameterCollection,
+        data : api.DataCollection,
+        *loss_args,
+        models : api.ModelCollection | None = None,
+        minimizer : api.MinimizerLike | None = None,
+        blind : bool = True,
         ntoysnull: int = 100,
         ntoysalt: int = 100,
-        sampler: Callable = base_sampler,
-        sample: Callable = base_sample,
+        **kwargs
     ):
         """
         Args:
@@ -50,12 +56,17 @@ class FrequentistCalculator(ToysCalculator):
             >>> calc = FrequentistCalculator(input=loss, minimizer=MinuitMinimizer(), ntoysnull=1000, ntoysalt=1000)
         """
         super().__init__(
-            input=input,
+            data_nll,
+            constraint_nll,
+            params,
+            data,
+            *loss_args,
+            models=models,
             minimizer=minimizer,
+            blind=blind,
             ntoysnull=ntoysnull,
             ntoysalt=ntoysalt,
-            sampler=sampler,
-            sample=sample,
+            **kwargs
         )
 
     def qnull(

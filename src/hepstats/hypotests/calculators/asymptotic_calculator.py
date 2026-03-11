@@ -114,8 +114,8 @@ class AsymptoticCalculator(BaseCalculator):
         params : api.ParameterCollection,
         data : api.DataCollection,
         *loss_args,
-        models : api.ModelCollection = None,
-        minimizer : api.MinimizerLike = None, 
+        models : api.ModelCollection | None = None,
+        minimizer : api.MinimizerLike | None = None, 
         unbinned_correction : bool | dict[api.RegionKey, bool] = True, # CANNOT BE NONE
         beta : int | dict[api.RegionKey, int] = 100, # CANNOT BE NONE
         blind : bool = True,
@@ -159,6 +159,11 @@ class AsymptoticCalculator(BaseCalculator):
         # cache of nll values computed with the asimov dataset
         self._asimov_nll: dict[POI, np.ndarray] = {}
 
+        if self.blind:
+            self.sentinel = object()
+            self._data = self.asimov_dataset(self.sentinel)
+            self._loss = self.asimov_loss(self.sentinel)
+
     @property
     def unbinned_correction(self):
         return self._unbinned_corr
@@ -188,6 +193,8 @@ class AsymptoticCalculator(BaseCalculator):
             if self.blind:
                 # Use nominal values
                 asimov_param_values = {k : self.parameters[k].value for k in self.parameters}
+                # if poi is not self.sentinel:
+                #     asimov_param_values[poi.param_key] = poi.value
             else:
                 # Fit over nuisances
                 asimov_param_values = pll(poi, self.minimizer, self.loss, self.parameters, ntrials_fit=ntrials_fit).params
@@ -221,11 +228,7 @@ class AsymptoticCalculator(BaseCalculator):
         return self._asimov_dataset[poi]
 
     def asimov_diagnostics(self, poi : POI):
-        if self.blind:
-            asimov_param_values = {k : self.parameters[k].value for k in self.parameters}
-        else:
-            asimov_param_values = pll(poi, self.minimizer, self.loss, self.parameters).params
-
+        asimov_param_values = pll(poi, self.minimizer, self.loss, self.parameters).params
         asimov_fitted_param_values = pll([], self.minimizer, self.asimov_loss(poi), self.parameters).params
 
         return asimov_param_values, asimov_fitted_param_values

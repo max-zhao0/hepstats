@@ -142,17 +142,14 @@ class FitFailuresWarning(UserWarning):
     pass
 
 
-class ToysManager(ToysObject):
+class ToysManager: # (ToysObject)
     """Class handling the toy generation and fit, results are stored in **ToyResult** instances stored
     themselves in a dictionary.
     """
 
     def __init__(
         self,
-        input,
-        minimizer,
-        sampler: Callable = base_sampler,
-        sample: Callable = base_sample,
+        minimizer
     ):
         """
         Args:
@@ -164,7 +161,7 @@ class ToysManager(ToysObject):
                :func:`hepstats.utils.fit.sampling.base_sample`.
         """
 
-        super().__init__(input=input, minimizer=minimizer, sampler=sampler, sample=sample)
+        # super().__init__(input=input, minimizer=minimizer, sampler=sampler, sample=sample)
         self._toys = {}
 
     def get_toyresult(self, poigen: POI, poieval: POIarray) -> ToyResult:
