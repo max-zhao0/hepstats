@@ -16,3 +16,8 @@ dist/
 /_build/**
 /.idea/**
 /src/hepstats/_version.py
+
+#Temp
+*.ipynb
+*.png
+.venv
