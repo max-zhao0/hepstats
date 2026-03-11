@@ -20,7 +20,7 @@ def plotfitresult(model, bounds, nbins):
     plt.plot(x, pdf, "-r", label="fit result")
 
 
-def plotlimit(ul, alpha=0.05, CLs=True, ax=None):
+def plotlimit(poivalues, pvalues, alpha=0.05, CLs=True, ax=None, plot_observed=True):
     """
     plot pvalue scan for different values of a parameter of interest (observed, expected and +/- sigma bands)
 
@@ -35,9 +35,6 @@ def plotlimit(ul, alpha=0.05, CLs=True, ax=None):
     if ax is None:
         ax = plt.gca()
 
-    poivalues = ul.poinull.values
-    pvalues = ul.pvalues(CLs=CLs)
-
     if CLs:
         cls_clr = "r"
         clsb_clr = "b"
@@ -48,42 +45,43 @@ def plotlimit(ul, alpha=0.05, CLs=True, ax=None):
     color_1sigma = "mediumseagreen"
     color_2sigma = "gold"
 
-    ax.plot(
-        poivalues,
-        pvalues["cls"],
-        label="Observed CL$_{s}$",
-        marker=".",
-        color="k",
-        markerfacecolor=cls_clr,
-        markeredgecolor=cls_clr,
-        linewidth=2.0,
-        ms=11,
-    )
-
-    ax.plot(
-        poivalues,
-        pvalues["clsb"],
-        label="Observed CL$_{s+b}$",
-        marker=".",
-        color="k",
-        markerfacecolor=clsb_clr,
-        markeredgecolor=clsb_clr,
-        linewidth=2.0,
-        ms=11,
-        linestyle=":",
-    )
-
-    ax.plot(
-        poivalues,
-        pvalues["clb"],
-        label="Observed CL$_{b}$",
-        marker=".",
-        color="k",
-        markerfacecolor="k",
-        markeredgecolor="k",
-        linewidth=2.0,
-        ms=11,
-    )
+    if plot_observed:
+        ax.plot(
+            poivalues,
+            pvalues["cls"],
+            label="Observed CL$_{s}$",
+            marker=".",
+            color="k",
+            markerfacecolor=cls_clr,
+            markeredgecolor=cls_clr,
+            linewidth=2.0,
+            ms=11,
+        )
+    
+        ax.plot(
+            poivalues,
+            pvalues["clsb"],
+            label="Observed CL$_{s+b}$",
+            marker=".",
+            color="k",
+            markerfacecolor=clsb_clr,
+            markeredgecolor=clsb_clr,
+            linewidth=2.0,
+            ms=11,
+            linestyle=":",
+        )
+    
+        ax.plot(
+            poivalues,
+            pvalues["clb"],
+            label="Observed CL$_{b}$",
+            marker=".",
+            color="k",
+            markerfacecolor="k",
+            markeredgecolor="k",
+            linewidth=2.0,
+            ms=11,
+        )
 
     ax.plot(
         poivalues,

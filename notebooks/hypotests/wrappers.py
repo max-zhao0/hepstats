@@ -21,8 +21,9 @@ class Parameter:
         )
 
 class ExtendedUnbinnedModel:
-    def from_zfit(zfit_model, unwrap_params=lambda x: x):
-        model = ExtendedUnbinnedModel()
+    @classmethod
+    def from_zfit(cls, zfit_model, unwrap_params=lambda x: x):
+        model = cls()
         
         model.backend = "zfit"
         model.zfit_model = zfit_model
@@ -109,8 +110,9 @@ class ExtendedUnbinnedNLL:
     def __init__(self, model):
         self.model = model
 
-    def from_zfit(zfit_model, unwrap_params=None):
-        return ExtendedUnbinnedNLL(ExtendedUnbinnedModel.from_zfit(zfit_model, unwrap_params))
+    @classmethod
+    def from_zfit(cls, zfit_model, unwrap_params=None):
+        return cls(ExtendedUnbinnedModel.from_zfit(zfit_model, unwrap_params))
 
     def yield_term(self, params):
         return self.model.get_yield(params)
