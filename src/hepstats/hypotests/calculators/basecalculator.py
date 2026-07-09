@@ -391,7 +391,7 @@ class ToysCalculator(BaseCalculator):
 
         self._toys_manager = ToysManager(minimizer)
 
-    def toys_from_yaml(
+    def load_toys(
         self,
         filename: str
     ):
@@ -410,7 +410,7 @@ class ToysCalculator(BaseCalculator):
         toysresults = self._toys_manager.toysresults_from_yaml(filename)
 
         for t in toysresults:
-            self.add_toyresult(t)
+            self._toys_manager.add_toyresult(t)
 
     @property
     def ntoysnull(self) -> int:

@@ -15,10 +15,9 @@ import asdf
 import numpy as np
 from tqdm.auto import tqdm
 
-from ..utils import pll
+from ..utils import pll, POI, POIarray
 from .exceptions import FormatError, ParameterNotFound
 from .hypotests_object import ToysObject
-# from .parameters import POI, POIarray
 
 base_sample = lambda: None
 base_sampler = lambda: None
@@ -130,7 +129,7 @@ class ToyResult:
             bestfit: array of best fitted values of the poi for each toy
             nlls: dictionary of NLL values for each value in `evalvalues` and best fit
         """
-        ret = {"poi": self.poigen.name, "bestfit": self.bestfit}
+        ret = {"poi": self.poigen.param_key, "bestfit": self.bestfit}
         ret["nlls"] = {n.value: nll for n, nll in self.nlls.items()}
         ret["genvalue"] = self.poigen.value
         ret["evalvalues"] = self.poieval.values
@@ -142,7 +141,7 @@ class FitFailuresWarning(UserWarning):
     pass
 
 
-class ToysManager: # (ToysObject)
+class ToysManager:
     """Class handling the toy generation and fit, results are stored in **ToyResult** instances stored
     themselves in a dictionary.
     """
@@ -375,17 +374,17 @@ class ToysManager: # (ToysObject)
                 raise FormatError(msg) from error
 
             for t in toys:
-                poiparam = None
-                for p in self.loss.get_params():
-                    if t["poi"] == p.name:
-                        poiparam = p
+                #  = None
+                # for pkey in params:
+                #     if t["poi"] == pkey:
+                #         poiparam = pkey
 
-                if poiparam is None:
-                    msg = f"Parameter with name {t['poi']} is not found."
-                    raise ParameterNotFound(msg)
+                # if poiparam is None:
+                #     msg = f"Parameter with name {t['poi']} is not found."
+                #     raise ParameterNotFound(msg)
 
-                poigen = POI(poiparam, t["genvalue"])
-                poieval = POIarray(poiparam, np.asarray(t["evalvalues"]))
+                poigen = POI(t["poi"], t["genvalue"])
+                poieval = POIarray(t["poi"], np.asarray(t["evalvalues"]))
 
                 bestfit = t["bestfit"]
                 nll_bestfit = t["nlls"]["bestfit"]

@@ -88,7 +88,7 @@ class POIarray:
         return values_equal.all() and name_equal
 
     def __hash__(self):
-        return hash((self.param_key, self.values.tostring()))
+        return hash((self.param_key, str(self.values)))
 
     # @property
     # def ndim(self):
@@ -166,7 +166,7 @@ class POI(POIarray):
         return f"POI('{self.param_key}', value={self.value})"
 
     def __hash__(self):
-        return hash((self.param_key, self.value))
+        return hash((self.param_key, str(self.value)))
 
 
 def asarray(poi: POI) -> POIarray:
